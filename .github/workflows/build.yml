@@ -18,7 +18,7 @@ env:
 
 jobs:
   mac:
-    runs-on: macos-latest
+    runs-on: macos-15-intel   # arm64 runners were often busy; Intel builds the universal binary just as well
     steps:
       - uses: actions/checkout@v4
       - name: JUCE
