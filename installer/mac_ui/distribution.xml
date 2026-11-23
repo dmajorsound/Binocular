@@ -13,5 +13,5 @@
     <choice id="default" title="Binocular VST3">
         <pkg-ref id="com.dmajorsound.binocular.vst3"/>
     </choice>
-    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.0" onConclusion="none">binocular-vst3.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.0.1" onConclusion="none">binocular-vst3.pkg</pkg-ref>
 </installer-gui-script>

@@ -161,6 +161,7 @@ struct Gen : Runtime {
   double g_ugdb = 0;
   double g_ugf = 0;
   double g_ugh = 0;
+  double g_ugh2 = 0;
   double g_ugj = 0;
   double g_ugn = 0;
   double g_ugon = 0;

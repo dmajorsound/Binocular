@@ -1,15 +1,15 @@
-# Binocular 1.0 – VST3 / AU
+# Binocular 1.0.1 – VST3 / AU
 
 Multiband correlation meter and goniometer by dmajorsound (dmajorsound.com). Native C++ port of `jsfx/Binocular.jsfx`
 as VST3 (macOS additionally AU). Audio and interface are those of the JSFX; the audio passes through untouched, no latency.
 
 ## Install on the Mac (no programming needed)
 
-**Installer:** on GitHub, open *Releases* and download `Binocular_1.0_installer_mac.pkg` (Mac) or
-`Binocular_1.0_installer_win64.exe` (Windows). Open it and click through; it installs the VST3 into the common VST3
+**Installer:** on GitHub, open *Releases* and download `Binocular_1.0.1_installer_mac.pkg` (Mac) or
+`Binocular_1.0.1_installer_win64.exe` (Windows). Open it and click through; it installs the VST3 into the common VST3
 folder. Mac: the installer is not signed by Apple, so right-click it and choose *Open* the first time.
 
-**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0_mac`. Unzip,
+**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0.1_mac`. Unzip,
 then copy `Binocular.vst3` into `~/Library/Audio/Plug-Ins/VST3/` and `Binocular.component` into
 `~/Library/Audio/Plug-Ins/Components/`. In REAPER: *Options → Preferences → Plug-ins → VST → Re-scan*.
 

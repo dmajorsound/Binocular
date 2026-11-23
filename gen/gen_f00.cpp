@@ -3,7 +3,7 @@
 namespace rs {
 double Gen::F_fband(double p0, double p1, double p2, double p3) {
   L_fband_i = p0; L_fband_xx = p1; L_fband_yy = p2; L_fband_xy = p3;
-  return ((void)(ASG(L_fband_dd, rt_sqrt((L_fband_xx * L_fband_yy)))), (void)(ASG(M((g_m_cor + L_fband_i)), ((L_fband_dd > g_tiny) ? (double)rt_max((-1.0), rt_min(1.0, (L_fband_xy / L_fband_dd))) : (double)0.0))), (void)(ASG(M((g_m_lev + L_fband_i)), (10.0 * rt_log10(((0.5 * (L_fband_xx + L_fband_yy)) + g_tiny))))), (void)(ASG(M((g_m_val + L_fband_i)), ((((10.0 * rt_log10((L_fband_xx + g_tiny))) > (-100.0)) && ((10.0 * rt_log10((L_fband_yy + g_tiny))) > (-100.0))) ? 1.0 : 0.0))), ASG(M((g_m_mon + L_fband_i)), (10.0 * rt_log10(rt_max(g_tiny12, (((L_fband_xx + L_fband_yy) + (2.0 * L_fband_xy)) / ((2.0 * (L_fband_xx + L_fband_yy)) + g_tiny)))))));
+  return ((void)(ASG(L_fband_dd, rt_sqrt((L_fband_xx * L_fband_yy)))), (void)(ASG(M((g_m_cor + L_fband_i)), ((L_fband_dd > g_tiny) ? (double)rt_max((-1.0), rt_min(1.0, (L_fband_xy / L_fband_dd))) : (double)0.0))), (void)(ASG(M((g_m_lev + L_fband_i)), (10.0 * rt_log10(((0.5 * (L_fband_xx + L_fband_yy)) + g_tiny))))), (void)(ASG(M((g_m_val + L_fband_i)), ((((10.0 * rt_log10((L_fband_xx + g_tiny))) > (-100.0)) || ((10.0 * rt_log10((L_fband_yy + g_tiny))) > (-100.0))) ? 1.0 : 0.0))), ASG(M((g_m_mon + L_fband_i)), (10.0 * rt_log10(rt_max(g_tiny12, (((L_fband_xx + L_fband_yy) + (2.0 * L_fband_xy)) / ((2.0 * (L_fband_xx + L_fband_yy)) + g_tiny)))))));
 }
 
 double Gen::F_fbands(double p0, double p1, double p2, double p3, double p4, double p5, double p6, double p7) {
