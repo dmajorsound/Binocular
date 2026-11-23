@@ -12,7 +12,7 @@ env:
 
 jobs:
   mac:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: JUCE
@@ -54,7 +54,7 @@ jobs:
           git -C ../juce checkout FETCH_HEAD
       - name: Build
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake -S . -B build -A x64
           cmake --build build --config Release --target Binocular_VST3 --parallel 4
       - uses: actions/upload-artifact@v4
         with:
