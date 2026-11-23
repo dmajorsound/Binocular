@@ -1,0 +1,1217 @@
+desc: Binocular
+//author: dmajorsound
+//tags: analysis meter correlation phase stereo mono
+//version: 1.0
+//about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
+//  (or a track and its sidechain) are in phase, unrelated or out of phase.
+//  Up to 64 bands: a filter bank with no delay. 128 and 256 bands: an FFT cross-spectrum.
+//  Also shows how much each band loses in mono, and the time offset and polarity between the sides.
+//  The audio passes through untouched, with no latency.
+
+slider1:8<0,9,1{4,8,12,16,24,32,48,64,128,256}>-Bands
+slider2:50<0,100,0.1>-Selectivity (%)
+slider3:300<10,5000,1>-Averaging (ms)
+slider4:0<0,1,1{Stereo,Sidechain}>-Input
+slider5:1<0,2,1{Off,3 s,Infinite}>-Hold
+slider6:0<0,1,1{Off,On}>-Freeze
+slider7:0<0,1,1{Dark,Light}>-Theme
+slider8:0<0,2,1{Correlation,Mono loss,Goniometer}>-View
+slider9:1<0,2,1{24 dB,48 dB,96 dB}>-Range
+// new sliders only at the end
+
+in_pin:Left
+in_pin:Right
+in_pin:Sidechain Left
+in_pin:Sidechain Right
+out_pin:Left
+out_pin:Right
+
+@init
+ext_noinit = 1;
+gfx_ext_retina = 1;
+
+tiny = 10^-24;
+tiny12 = 10^-12;
+dnz = 10^-18;          // alternating -360 dB offset, keeps the meter filters out of denormals (meter only, not the audio)
+
+// memory
+m_st  = 0;             // filter bank: 64 bands x 32 fields: 3 coefficients, 16 filter states, 3 averages
+m_cor = 4096;          // correlation per band (up to 1024)
+m_lev = 5120;          // level per band, dB
+m_val = 6144;          // 1 = both sides carry signal
+m_hld = 7168;          // lowest correlation held
+m_ht  = 8192;          // time since that low
+m_fc  = 9216;          // band centers, Hz
+m_u0  = 10240;         // FFT bands: lower band edge, in bins of the engine the band uses
+m_u1  = 11264;         // FFT bands: upper band edge
+m_bl  = 12288;         // the band counts of the Bands control
+m_rl  = 524288;        // input history left / main: a 65536 ring
+m_rr  = 589824;        // input history right / sidechain
+m_fb  = 131072;        // FFT buffer, complex, kept inside one 65536 block
+m_win = 196608;        // Hann window, long FFT
+m_sxx = 229376;        // long FFT: smoothed spectra per bin (up to 16384 bins each)
+m_syy = 245776;
+m_sxy = 262176;        // real part of the cross-spectrum
+m_cxx = 278576;        // running sums over the bins
+m_cyy = 294976;
+m_cxy = 311376;
+m_sxi = 327776;        // imaginary part of the cross-spectrum (for the offset)
+m_wi2 = 344176;        // Hann window, short FFT
+m_s2x = 352368;        // short FFT: spectra and running sums (up to 4096 bins each)
+m_s2y = 360568;
+m_s2c = 368768;
+m_c2x = 376968;
+m_c2y = 385168;
+m_c2c = 393368;
+m_eng = 401568;        // 1 = band is read from the short FFT
+m_mon = 402592;        // mono loss per band, dB
+m_hmo = 403616;        // deepest mono loss held
+m_rfc = 404640;        // reference curve: correlation
+m_rfm = 405664;        //                  mono loss
+m_rfv = 406688;        //                  band carried signal
+m_hmt = 407712;        // time since the deepest mono loss
+m_gx  = 409600;        // goniometer: last 8192 samples, side (x) and mid (y)
+m_gy  = 417792;
+m_bl[0] = 4; m_bl[1] = 8; m_bl[2] = 12; m_bl[3] = 16; m_bl[4] = 24; m_bl[5] = 32;
+m_bl[6] = 48; m_bl[7] = 64; m_bl[8] = 128; m_bl[9] = 256;
+
+// ---------------------------------------------------------------- setup
+// Log-spaced bands from 20 Hz to 20 kHz.
+// Up to 64 bands: each band is two cascaded band-pass filters (0 dB at the center), left and right alike.
+// 128 and 256 bands: read from the FFT cross-spectrum. A band takes the short FFT (fast) when it is
+// at least 3 of its bins wide, otherwise the long FFT (fine enough for the bass).
+// The long FFT always runs: it also finds the offset and the polarity.
+function setup() local(i, p, fc, w0, al, sp, wm, bw, xs, bo, e0, e1)
+(
+  nb = m_bl[max(0, min(9, floor(slider1+0.5)))];
+  ffm = nb > 64;
+  fn = srate <= 50000 ? 16384 : 32768;   // long: 2.9 Hz per bin at 48 and 96 kHz
+  fhop = fn/8;
+  fnb = fn/2;
+  fs2 = fn/4;                            // short: 4096 at 48 kHz, about 85 ms
+  fhop2 = fs2/4;
+  fnb2 = fs2/2;
+  flo = 20;
+  fhi = min(20000, 0.45*srate);
+  sp = log(fhi/flo)/log(2)/nb;           // band spacing in octaves
+  wm = 2^(1 - 2*slider2/100);            // 0 % = twice the spacing, 50 % = the spacing, 100 % = half
+  bw = sp*wm*1.6;                        // per stage; the cascade narrows it again
+  bo = sp*wm;                            // FFT bands: width in octaves, 50 % = bands just touch
+  memset(m_st, 0, 64*32);
+  memset(m_rl, 0, 65536); memset(m_rr, 0, 65536);
+  memset(m_sxx, 0, 16400*7);
+  memset(m_s2x, 0, 8200*6);
+  i = 0;
+  loop(fn,
+    m_win[i] = 0.5 - 0.5*cos(2*$pi*(i+0.5)/fn);
+    i += 1;
+  );
+  i = 0;
+  loop(fs2,
+    m_wi2[i] = 0.5 - 0.5*cos(2*$pi*(i+0.5)/fs2);
+    i += 1;
+  );
+  fwp = 0; fhc = 0; fhc2 = 0; fpend = 0; f2pend = 0; foffp = 0;
+  i = 0;
+  loop(nb,
+    fc = flo*(fhi/flo)^((i+0.5)/nb);
+    ffm ? (
+      e0 = fc*2^(-bo/2); e1 = fc*2^(bo/2);
+      m_eng[i] = (e1-e0)*fs2/srate >= 3;
+      m_eng[i] ? (
+        m_u0[i] = max(0.5, min(fnb2-1, e0*fs2/srate + 0.5));
+        m_u1[i] = max(0.5, min(fnb2-1, e1*fs2/srate + 0.5));
+      ) : (
+        m_u0[i] = max(0.5, min(fnb-1, e0*fn/srate + 0.5));
+        m_u1[i] = max(0.5, min(fnb-1, e1*fn/srate + 0.5));
+      );
+    ) : (
+      m_eng[i] = 0;
+      w0 = 2*$pi*fc/srate;
+      xs = log(2)/2*bw*w0/sin(w0);
+      al = sin(w0)*(exp(xs)-exp(-xs))/2;
+      p = m_st + i*32;
+      p[0] = al/(1+al);
+      p[1] = -2*cos(w0)/(1+al);
+      p[2] = (1-al)/(1+al);
+    );
+    m_fc[i] = fc;
+    m_cor[i] = 0; m_lev[i] = -200; m_val[i] = 0; m_mon[i] = 0;
+    m_hld[i] = 1; m_ht[i] = 0; m_hmo[i] = 0; m_hmt[i] = 0;
+    i += 1;
+  );
+  bxy = bxx = byy = 0;
+  bcor = 0; bval = 0; bhld = 1; bht = 0;
+  ofs_ok = 0; ofs_lag = 0; ofs_sgn = 1;
+  refon = 0;
+  lnb = slider1; lsel = slider2; lsr = srate; lin = slider4;
+);
+
+// ---------------------------------------------------------------- FFT engine
+// a running sum over the bins, read at a fractional bin position
+function fsum(c, u, nbn) local(k)
+(
+  k = min(floor(u), nbn-1);
+  c[k] + (u-k)*(c[k+1]-c[k]);
+);
+
+// one band from band powers: correlation, level, mono loss
+function fband(i, xx, yy, xy) local(dd)
+(
+  dd = sqrt(xx*yy);
+  m_cor[i] = dd > tiny ? max(-1, min(1, xy/dd)) : 0;
+  m_lev[i] = 10*log10(0.5*(xx+yy) + tiny);
+  m_val[i] = (10*log10(xx+tiny) > -100) && (10*log10(yy+tiny) > -100);
+  m_mon[i] = 10*log10(max(tiny12, (xx+yy+2*xy)/(2*(xx+yy)+tiny)));
+);
+
+// left in the real part, right in the imaginary part of one FFT; split, then smooth per bin.
+// sx, sy, sc: smoothed powers and real cross part. ci: imaginary cross part (0 = not needed).
+function fspec(n, st, win, sx, sy, sc, ci, kf) local(i, j, k, a, b, c, d, xr, xi, yr, yi)
+(
+  i = 0; j = st;
+  loop(n,
+    m_fb[2*i] = m_rl[j]*win[i];
+    m_fb[2*i+1] = m_rr[j]*win[i];
+    j = (j + 1) & 65535;
+    i += 1;
+  );
+  fft(m_fb, n);
+  fft_permute(m_fb, n);
+  k = 1;
+  loop(n/2-1,
+    a = m_fb[2*k]; b = m_fb[2*k+1];
+    c = m_fb[2*(n-k)]; d = m_fb[2*(n-k)+1];
+    xr = (a+c)*0.5; xi = (b-d)*0.5;
+    yr = (b+d)*0.5; yi = (c-a)*0.5;
+    sx[k] += (xr*xr + xi*xi - sx[k])*kf;
+    sy[k] += (yr*yr + yi*yi - sy[k])*kf;
+    sc[k] += (xr*yr + xi*yi - sc[k])*kf;
+    ci ? ( ci[k] += (xi*yr - xr*yi - ci[k])*kf; );
+    k += 1;
+  );
+);
+
+// running sums, then every band of the given engine
+function fbands(eng, n, sx, sy, sc, cx, cy, cc) local(i, k, nrm)
+(
+  cx[0] = cy[0] = cc[0] = 0;
+  k = 0;
+  loop(n/2,
+    cx[k+1] = cx[k] + sx[k];
+    cy[k+1] = cy[k] + sy[k];
+    cc[k+1] = cc[k] + sc[k];
+    k += 1;
+  );
+  nrm = 2/(n*n*0.375);                   // bin power to signal power (Hann, one-sided)
+  i = 0;
+  loop(nb,
+    m_eng[i] == eng ? (
+      fband(i, (fsum(cx, m_u1[i], n/2) - fsum(cx, m_u0[i], n/2))*nrm,
+               (fsum(cy, m_u1[i], n/2) - fsum(cy, m_u0[i], n/2))*nrm,
+               (fsum(cc, m_u1[i], n/2) - fsum(cc, m_u0[i], n/2))*nrm);
+    );
+    i += 1;
+  );
+);
+
+// offset and polarity: the phase of the cross-spectrum alone (GCC-PHAT), back to time,
+// strongest peak within 10 ms. Negative lag = the right side (or the sidechain) is late.
+function foffset() local(k, re, im, mg, i, lm, bv, bi, v, s2, y0, y1, y2, den, fr)
+(
+  memset(m_fb, 0, 2*fn);
+  k = 1;
+  loop(fnb-1,
+    re = m_sxy[k]; im = m_sxi[k];
+    mg = sqrt(re*re + im*im);
+    mg > tiny ? (
+      m_fb[2*k] = re/mg; m_fb[2*k+1] = im/mg;
+      m_fb[2*(fn-k)] = re/mg; m_fb[2*(fn-k)+1] = -im/mg;
+    );
+    k += 1;
+  );
+  fft_ipermute(m_fb, fn);
+  ifft(m_fb, fn);
+  lm = floor(0.01*srate);
+  bv = 0; bi = 0; s2 = 0;
+  i = -lm;
+  loop(2*lm+1,
+    v = m_fb[2*((i+fn) % fn)];
+    s2 += v*v;
+    abs(v) > abs(bv) ? ( bv = v; bi = i; );
+    i += 1;
+  );
+  y0 = abs(m_fb[2*((bi-1+fn) % fn)]); y1 = abs(bv); y2 = abs(m_fb[2*((bi+1+fn) % fn)]);
+  den = y0 - 2*y1 + y2;
+  fr = den != 0 ? max(-0.5, min(0.5, 0.5*(y0-y2)/den)) : 0;
+  ofs_conf = s2 > 0 ? abs(bv)/sqrt(s2/(2*lm+1)) : 0;
+  ofs_ok = ofs_conf > 8 && bval;
+  ofs_lag = bi + fr;
+  ofs_sgn = bv < 0 ? -1 : 1;
+);
+
+// the long frame: spectrum and its bands. The offset follows in the next block.
+function fframe()
+(
+  fspec(fn, fst1, m_win, m_sxx, m_syy, m_sxy, m_sxi, 1 - exp(-fhop/(max(1, slider3)*0.001*srate)));
+  ffm ? fbands(0, fn, m_sxx, m_syy, m_sxy, m_cxx, m_cyy, m_cxy);
+);
+
+function fframe2()
+(
+  fspec(fs2, fst2, m_wi2, m_s2x, m_s2y, m_s2c, 0, 1 - exp(-fhop2/(max(1, slider3)*0.001*srate)));
+  fbands(1, fs2, m_s2x, m_s2y, m_s2c, m_c2x, m_c2y, m_c2c);
+);
+
+// ---------------------------------------------------------------- drawing helpers
+function ucol(c, a)
+(
+  gfx_r = ((c >> 16) & 255)/255;
+  gfx_g = ((c >> 8) & 255)/255;
+  gfx_b = (c & 255)/255;
+  gfx_a = a;
+);
+
+// the color of a correlation value: red below 0; from 0 up, blue turns green toward +1
+function ucorr(v, a) local(t)
+(
+  v < 0 ? ucol(ucMUTE, a) : (
+    t = min(1, v);
+    gfx_r = (((ucACTO >> 16) & 255)*(1-t) + ((ucGRN >> 16) & 255)*t)/255;
+    gfx_g = (((ucACTO >> 8) & 255)*(1-t) + ((ucGRN >> 8) & 255)*t)/255;
+    gfx_b = ((ucACTO & 255)*(1-t) + (ucGRN & 255)*t)/255;
+    gfx_a = a;
+  );
+);
+
+function urr(x, y, w, h, rad, fill) local(rr)
+(
+  rr = floor(min(rad, min(w, h)/2));
+  fill ? (
+    rr < 1 ? gfx_rect(x, y, w, h) : (
+      gfx_rect(x+rr, y, w-2*rr, h);
+      gfx_rect(x, y+rr, rr, h-2*rr);
+      gfx_rect(x+w-rr, y+rr, rr, h-2*rr);
+      gfx_circle(x+rr, y+rr, rr, 1, 1);
+      gfx_circle(x+w-rr-1, y+rr, rr, 1, 1);
+      gfx_circle(x+rr, y+h-rr-1, rr, 1, 1);
+      gfx_circle(x+w-rr-1, y+h-rr-1, rr, 1, 1);
+    );
+  ) : (
+    gfx_roundrect(x, y, w-1, h-1, rr, 1);
+  );
+);
+
+function uarc(cx, cy, rad, a1, a2, th) local(k)
+(
+  k = 0;
+  loop(max(1, ceil(th*2)),
+    gfx_arc(cx, cy, rad - th/2 + k*0.5, a1, a2, 1);
+    k += 1;
+  );
+);
+
+function utext(str, cx, ty) local(tw, th)
+(
+  gfx_measurestr(str, tw, th);
+  gfx_x = floor(cx - tw/2); gfx_y = floor(ty);
+  gfx_drawstr(str);
+);
+
+function uright(str, rx, ty) local(tw, th)
+(
+  gfx_measurestr(str, tw, th);
+  gfx_x = floor(rx - tw); gfx_y = floor(ty);
+  gfx_drawstr(str);
+);
+
+function uin(x, y, w, h)
+(
+  mouse_x >= x && mouse_x < x+w && mouse_y >= y && mouse_y < y+h;
+);
+
+function uinc(cx, cy, rad)
+(
+  sqr(mouse_x-cx) + sqr(mouse_y-cy) <= rad*rad;
+);
+
+// a correlation value with its sign, e.g. +0.84 / -0.31
+function usign(dst, v)
+(
+  abs(v) < 0.005 ? sprintf(dst, "0.00") : v > 0 ? sprintf(dst, "+%.2f", v) : sprintf(dst, "-%.2f", -v);
+);
+
+function ufreq(dst, f)
+(
+  f < 100 ? sprintf(dst, "%.1f Hz", f) : f < 1000 ? sprintf(dst, "%d Hz", floor(f+0.5)) : sprintf(dst, "%.2f kHz", f/1000);
+);
+
+// controls: 1 bands, 2 selectivity, 3 averaging, each as 0..1 on its track
+function ufrac(id)
+(
+  id == 1 ? slider1/9 : id == 2 ? slider2/100 : log(max(10, slider3)/10)/log(500);
+);
+
+function uset(id, f)
+(
+  f = max(0, min(1, f));
+  id == 1 ? ( slider1 = floor(f*9+0.5); slider_automate(1); ) :
+  id == 2 ? ( slider2 = floor(f*1000+0.5)/10; slider_automate(2); ) :
+            ( slider3 = floor(10*500^f+0.5); slider_automate(4); );
+);
+
+function udef(id)
+(
+  id == 1 ? ( slider1 = 8; slider_automate(1); ) :
+  id == 2 ? ( slider2 = 50; slider_automate(2); ) :
+            ( slider3 = 300; slider_automate(4); );
+);
+
+// a rotary control: label above, value below, gray ring with the setting as a brighter arc.
+// Drag up or down; steps > 0 draws a dot for every position.
+function uknob(id, cx, cy, rad, f, label, val, steps) local(hot, ang, k, ka, br, sx, sy)
+(
+  hot = uhov == id || udrag == id || (id == 1 && udrag == 2);
+  gfx_setfont(7); ucol(ucMUTED, 1); utext(label, cx, cy - rad - 20*usc);
+  ucol(ucHAIR, 1); uarc(cx, cy, rad, -2.356, 2.356, 3*usc);
+  f > 0.002 ? ( ucol(ucCTL, hot ? 1 : 0.85); uarc(cx, cy, rad, -2.356, -2.356 + 4.712*f, 3*usc); );
+  steps > 0 ? (
+    k = 0;
+    loop(steps+1,
+      ka = -2.356 + 4.712*k/steps;
+      ucol(ucDIM, 1); gfx_circle(cx + sin(ka)*(rad+5*usc), cy - cos(ka)*(rad+5*usc), max(0.8, usc), 1, 1);
+      k += 1;
+    );
+  );
+  br = rad - 6*usc;
+  ucol(hot ? ucHAIR : ucSURF, 1); gfx_circle(cx, cy, br, 1, 1);
+  ucol(ucBORD, 1); gfx_circle(cx, cy, br, 0, 1);
+  ang = -2.356 + 4.712*f;
+  sx = sin(ang); sy = -cos(ang);
+  ucol(ucCTL, 1);
+  k = -1;
+  loop(3,
+    gfx_line(cx + sx*br*0.25 - sy*k*0.6*usc, cy + sy*br*0.25 + sx*k*0.6*usc,
+             cx + sx*br*0.85 - sy*k*0.6*usc, cy + sy*br*0.85 + sx*k*0.6*usc, 1);
+    k += 1;
+  );
+  gfx_setfont(2); ucol(ucTEXT, 1); utext(val, cx, cy + rad + 5*usc);
+  uinc(cx, cy, rad + 8*usc) ? uhov = id;
+);
+
+// a tab that stands on the header line: the open one carries a frame and runs into the page below it
+function utab(x, w, on, hot, str) local(ty, bot, r, b)
+(
+  bot = floor(50*usc); r = floor(6*usc); b = max(1, floor(1.4*usc));
+  on ? (
+    ty = floor(23*usc);
+    ucol(ucACTO, 1); urr(x, ty, w, bot-ty+r+2, r, 1);
+    ucol(ucBG, 1); urr(x+b, ty+b, w-2*b, bot-ty+r+2, r-b, 1);
+    ucol(ucTEXT, 1);
+  ) : (
+    ty = floor(26*usc);
+    ucol(hot ? ucHAIR : ucSURF, 1); urr(x, ty, w, bot-ty+r+2, r, 1);
+    ucol(hot ? ucTEXT : ucMUTED, 1);
+  );
+  utext(str, x+w/2, (on ? 28 : 30)*usc);
+);
+
+// a value to its height in the display: correlation +1..-1, or mono loss 0 dB..-range
+function umap(v)
+(
+  uview ? floor(ugy + upt + (ugh-upt-upd)*min(1, max(0, -v/urng)))
+        : floor(ugy + upd + (ugh-2*upd)*(1-v)/2);
+);
+
+// the mark, right edge at rx, centered on cy. Color: whatever ucol set before.
+function ulogo(rx, cy) local(big, w, h, m, x0, y0, r, c, v)
+(
+  big = usc >= 1.5;
+  w = big ? lgw2 : lgw1; h = big ? lgh2 : lgh1; m = big ? m_lg2 : m_lg1;
+  x0 = floor(rx - w); y0 = floor(cy - h/2);
+  r = 0;
+  loop(h,
+    c = 0;
+    loop(w,
+      v = m[r*w + c];
+      v > 0 ? ( gfx_a = v/15; gfx_rect(x0+c, y0+r, 1, 1); );
+      c += 1;
+    );
+    r += 1;
+  );
+);
+
+// a small rectangular switch, the active one carries the blue frame
+function ubtn(x, y, w, h, on, hot, str)
+(
+  on ? (
+    ucol(ucACT, 1); urr(x, y, w, h, 3*usc, 1);
+    ucol(ucACTO, 1); urr(x, y, w, h, 3*usc, 0);
+    ucol(ucACTX, 1);
+  ) : (
+    ucol(hot ? ucHAIR : ucSURF, 1); urr(x, y, w, h, 3*usc, 1);
+    ucol(ucBORD, 1); urr(x, y, w, h, 3*usc, 0);
+    ucol(hot ? ucTEXT : ucMUTED, 1);
+  );
+  utext(str, x+w/2, y+h/2-6*usc);
+);
+
+lnb = -1;
+setup();
+
+// ---------------------------------------------------------------- dmajorsound logo
+// The mark as a small bitmap in two sizes (1x and 2x), 16 levels of coverage per pixel (0-f),
+// so it stays one single file and is drawn in the theme color.
+m_lg1 = 430080;        // logo 1x
+m_lg2 = 434176;        // logo 2x
+function ldec(str, dst, n) local(i, c)
+(
+  i = 0;
+  loop(n,
+    c = str_getchar(str, i);
+    dst[i] = c <= '9' ? c - '0' : c - 'a' + 10;
+    i += 1;
+  );
+);
+strcpy(#lg1, "");
+strcat(#lg1, "0000007fffffefffffefd820");
+strcat(#lg1, "0000008ffff84ffffc1fffe3");
+strcat(#lg1, "0000008ffff84ffffc0ffffd");
+strcat(#lg1, "0000008ffff84ffffc0fffff");
+strcat(#lg1, "0000008ffff84ffffc0fffff");
+strcat(#lg1, "0000008ffff84ffffc0fffff");
+strcat(#lg1, "0000008ffff84ffffc0fffff");
+strcat(#lg1, "0000008ffff8299996089998");
+strcat(#lg1, "0016928ffff8000000000000");
+strcat(#lg1, "06eff48ffff8000000000000");
+strcat(#lg1, "5ffff48ffff8000000000000");
+strcat(#lg1, "bffff48ffff8000000000000");
+strcat(#lg1, "bffff48ffff8000000000000");
+strcat(#lg1, "9ffff48ffff8000000000000");
+strcat(#lg1, "1cfff48ffff8000000000000");
+strcat(#lg1, "006ceefffff7000000000000");
+lgw1 = 24; lgh1 = 16;
+ldec(#lg1, m_lg1, 384);
+strcpy(#lg2, "");
+strcat(#lg2, "0000000000000bfffffffffffffffffffffffffec9500000");
+strcat(#lg2, "0000000000000ffffffffffecfffffffffffcefffffe7000");
+strcat(#lg2, "0000000000000ffffffffff309fffffffffa02fffffffc10");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffc0");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900fffffffff7");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900fffffffffd");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff207fffffffff900ffffffffff");
+strcat(#lg2, "0000000000000ffffffffff206fffffffff800cffffffffe");
+strcat(#lg2, "0000000000000ffffffffff2002333333330001333333331");
+strcat(#lg2, "0000000013000ffffffffff2000000000000000000000000");
+strcat(#lg2, "000004adff800ffffffffff2000000000000000000000000");
+strcat(#lg2, "0003cfffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "005effffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "04ffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "0dffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "4fffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "6fffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "6fffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "6fffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "4fffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "0cffffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "03efffffff900ffffffffff2000000000000000000000000");
+strcat(#lg2, "004effffffb02ffffffffff2000000000000000000000000");
+strcat(#lg2, "00019efffffdeffffffffff2000000000000000000000000");
+strcat(#lg2, "0000016aceffffffffffffc0000000000000000000000000");
+lgw2 = 48; lgh2 = 32;
+ldec(#lg2, m_lg2, 1536);
+
+
+@slider
+// changes are picked up in @block, so drags from the window behave the same
+
+@block
+(slider1 != lnb || slider2 != lsel || srate != lsr || slider4 != lin) ? setup();
+kav = 1 - exp(-1000/(max(1, slider3)*srate));
+inm = slider4 >= 0.5;
+mon = slider6 < 0.5;                     // frozen: analysis stops, the display keeps the last picture
+
+mon ? (
+  // the FFT work, spread over the blocks so no single block carries all of it:
+  // short frame when due, then either the offset of the last long frame or a new long frame
+  f2pend ? ( f2pend = 0; fframe2(); );
+  foffp ? ( foffp = 0; foffset(); ) : fpend ? ( fpend = 0; fframe(); foffp = 1; );
+  dt = samplesblock/srate;
+  hm = slider5;
+  i = 0;
+  loop(nb,
+    !ffm ? (
+      p = m_st + i*32;
+      fband(i, p[21], p[22], p[20]);
+    );
+    rr = m_cor[i];
+    m_val[i] ? (
+      (hm < 0.5 || rr < m_hld[i] || req_clr) ? (
+        m_hld[i] = rr; m_ht[i] = 0;
+      ) : (
+        m_ht[i] += dt;
+        (hm < 1.5 && m_ht[i] > 3) ? ( m_hld[i] = min(rr, m_hld[i] + dt*0.5); );
+      );
+      // the deepest mono loss, held the same way (released at 6 dB per second)
+      (hm < 0.5 || req_clr || m_mon[i] < m_hmo[i]) ? (
+        m_hmo[i] = m_mon[i]; m_hmt[i] = 0;
+      ) : (
+        m_hmt[i] += dt;
+        (hm < 1.5 && m_hmt[i] > 3) ? ( m_hmo[i] = min(m_mon[i], m_hmo[i] + dt*6); );
+      );
+    ) : (
+      req_clr ? ( m_hld[i] = 1; m_ht[i] = 0; m_hmo[i] = 0; );
+    );
+    i += 1;
+  );
+  // the full signal, as on a classic correlation meter
+  dd = sqrt(bxx*byy);
+  bcor = dd > tiny ? max(-1, min(1, bxy/dd)) : 0;
+  blev_l = 10*log10(bxx+tiny);
+  blev_r = 10*log10(byy+tiny);
+  // balance (left over right) and width (side over mid), for the goniometer page
+  bbal = blev_l - blev_r;
+  bwid = 10*log10((bxx+byy-2*bxy)*0.5 + tiny) - 10*log10((bxx+byy+2*bxy)*0.5 + tiny);
+  bval = blev_l > -100 && blev_r > -100;
+  bval ? (
+    (hm < 0.5 || bcor < bhld || req_clr) ? (
+      bhld = bcor; bht = 0;
+    ) : (
+      bht += dt;
+      (hm < 1.5 && bht > 3) ? ( bhld = min(bcor, bhld + dt*0.5); );
+    );
+  ) : (
+    req_clr ? ( bhld = 1; bht = 0; );
+  );
+  req_clr = 0;
+);
+
+@sample
+// the audio is never touched: spl0 / spl1 leave as they came in
+mon ? (
+  inm ? (
+    xl = (spl0+spl1)*0.5; xr = (spl2+spl3)*0.5;
+  ) : (
+    xl = spl0; xr = spl1;
+  );
+  dnz = -dnz;
+  xl += dnz; xr += dnz;
+  bxy += (xl*xr - bxy)*kav;
+  bxx += (xl*xl - bxx)*kav;
+  byy += (xr*xr - byy)*kav;
+  // goniometer: rotated by 45 degrees, mid straight up, left to the upper left
+  m_gx[gwp] = (xr - xl)*0.70711;
+  m_gy[gwp] = (xl + xr)*0.70711;
+  gwp = (gwp + 1) & 8191;
+  // history for the FFTs (the work itself runs in @block): the long one always (offset, polarity), the short one with 128 / 256 bands
+  m_rl[fwp] = xl; m_rr[fwp] = xr;
+  fwp = (fwp + 1) & 65535;
+  fhc += 1;
+  fhc >= fhop ? ( fhc = 0; fst1 = (fwp - fn + 65536) & 65535; fpend = 1; );
+  ffm ? (
+    fhc2 += 1;
+    fhc2 >= fhop2 ? ( fhc2 = 0; fst2 = (fwp - fs2 + 65536) & 65535; f2pend = 1; );
+  ) : (
+    p = m_st;
+    loop(nb,
+      c0 = p[0]; c1 = p[1]; c2 = p[2];
+      // left, stage 1 and 2
+      ys = c0*(xl - p[5]) - c1*p[6] - c2*p[7];
+      p[5] = p[4]; p[4] = xl; p[7] = p[6]; p[6] = ys;
+      zl = c0*(ys - p[9]) - c1*p[10] - c2*p[11];
+      p[9] = p[8]; p[8] = ys; p[11] = p[10]; p[10] = zl;
+      // right, stage 1 and 2
+      ys = c0*(xr - p[13]) - c1*p[14] - c2*p[15];
+      p[13] = p[12]; p[12] = xr; p[15] = p[14]; p[14] = ys;
+      zr = c0*(ys - p[17]) - c1*p[18] - c2*p[19];
+      p[17] = p[16]; p[16] = ys; p[19] = p[18]; p[18] = zr;
+      // averages: cross product and the two powers
+      p[20] += (zl*zr - p[20])*kav;
+      p[21] += (zl*zl - p[21])*kav;
+      p[22] += (zr*zr - p[22])*kav;
+      p += 32;
+    );
+  );
+);
+
+@gfx 680 520
+// ---- theme: the gray design of roomservice. Controls stay gray, only signals carry color.
+udark = slider7 < 0.5;
+udark ? (
+  ucBG = 0x202125; ucSURF = 0x303136; ucBORD = 0x72737B; ucTEXT = 0xFFFFFF; ucMUTED = 0xC6C7CD; ucLINE = 0x3A3B41; ucHAIR = 0x55565D;
+  ucDIM = 0x7C7D85; ucSTAGE = 0x18191C; ucACT = 0x2F5382; ucACTX = 0xEAF3FF; ucACTO = 0x7FBEFF; ucCTL = 0xE4E5E9;
+  ucIN = 0xA7B4C4; ucMUTE = 0xE5484D; ucGRN = 0x34C759;
+) : (
+  ucBG = 0xE6E6E8; ucSURF = 0xF8F8F9; ucBORD = 0xBABBC0; ucTEXT = 0x2B2E33; ucMUTED = 0x62666D; ucLINE = 0xEAEAEC; ucHAIR = 0xCDCED2;
+  ucDIM = 0xA2A4A9; ucSTAGE = 0xF8F8F9; ucACT = 0xD3E5F8; ucACTX = 0x1A4A86; ucACTO = 0x4C93DC; ucCTL = 0x565A62;
+  ucIN = 0x6A7580; ucMUTE = 0xE5484D; ucGRN = 0x1E9E4A;
+);
+
+usc = max(0.5, min(gfx_w/680, gfx_h/520));
+uox = floor((gfx_w - 680*usc)/2);
+uex = max(0, gfx_h/usc - 520);           // extra height goes to the display
+ulb = mouse_cap & 1;
+upress = ulb && !ulbp;
+uhov = 0;
+uon = 1;                                 // drawing is never dimmed
+ufrz = slider6 >= 0.5;                   // frozen
+unb = nb;
+
+ucol(ucBG, 1); gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", floor(19*usc), 'b');
+gfx_setfont(2, "Arial", floor(12*usc));
+gfx_setfont(3, "Arial", floor(10.5*usc));
+gfx_setfont(4, "Arial", floor(12.5*usc), 'b');
+gfx_setfont(5, "Arial", floor(15*usc), 'b');
+gfx_setfont(6, "Arial", floor(10.5*usc), 'b');
+gfx_setfont(7, "Arial", floor(9.5*usc), 'b');
+gfx_setfont(8, "Arial", floor(8*usc), 'b');
+gfx_setfont(9, "Arial", floor(10*usc), 0);     // tagline, plain as in Alfred
+gfx_setfont(11, "Arial", floor(9*usc), 0);    // dmajorsound.com
+gfx_setfont(10, "Arial", floor(10*usc), 0);   // footer: plain, not bold
+
+// ---- header
+umode = floor(slider8+0.5);
+uview = umode == 1;                      // mono loss
+ugon = umode == 2;                       // goniometer
+// on / off: a round power button like roomservice. On (blue) = the meter runs.
+// Off = it stops and keeps the last picture; the audio always passes.
+upx = uox+28*usc; upy = 33*usc; upr = 11*usc;
+uinc(upx, upy, upr+3*usc) ? uhov = 10;
+!ufrz ? ( ucol(ucACT, 1); gfx_circle(upx, upy, upr, 1, 1); );
+ucol(!ufrz ? ucACTO : (uhov == 10 ? ucTEXT : ucDIM), 1);
+gfx_circle(upx, upy, upr, 0, 1);
+uarc(upx, upy, 5*usc, 0.75, 5.53, 1.4*usc);
+gfx_rect(floor(upx-0.7*usc), floor(upy-7*usc), max(1, floor(1.6*usc)), floor(6*usc));
+gfx_setfont(1);
+gfx_setfont(1);
+// the Binocular mark: two overlapping circles, blue and green like the meter, the overlap lightly filled
+ubcy = 31*usc; ubr = 8*usc; ubn1 = uox+58*usc; ubn2 = uox+69*usc;
+ucol(ucACTO, 0.18); gfx_circle(ubn1, ubcy, ubr, 1, 1);
+ucol(ucGRN, 0.18); gfx_circle(ubn2, ubcy, ubr, 1, 1);
+ucol(ucACTO, 1); uarc(ubn1, ubcy, ubr, 0, 6.2832, 1.8*usc);
+ucol(ucGRN, 1); uarc(ubn2, ubcy, ubr, 0, 6.2832, 1.8*usc);
+ucol(ucTEXT, 1); gfx_x = uox+84*usc; gfx_y = 18*usc; gfx_drawstr("Binocular");
+// the dmajorsound mark, as in Alfred: right after the title, raised like an exponent
+gfx_measurestr("Binocular", uttw, utth);
+ucol(ucMUTED, 1); ulogo(uox+84*usc + uttw + 3*usc + (usc >= 1.5 ? lgw2 : lgw1), 24*usc);
+gfx_setfont(1);
+gfx_setfont(9); ucol(ucMUTED, 1); gfx_x = uox+85*usc; gfx_y = 37*usc; gfx_drawstr("Mmm… coherent.");
+
+// view: three small tabs on the header line
+gfx_setfont(7);
+uvx = floor(uox+212*usc); uvw = floor(80*usc);
+uvx2 = floor(uox+295*usc); uvw2 = floor(68*usc);
+uvx3 = floor(uox+366*usc); uvw3 = floor(74*usc);
+uty2 = floor(23*usc); uth = floor(50*usc)-uty2;
+uin(uvx, uty2, uvw, uth) ? uhov = 30;
+uin(uvx2, uty2, uvw2, uth) ? uhov = 31;
+uin(uvx3, uty2, uvw3, uth) ? uhov = 35;
+utab(uvx, uvw, umode == 0, uhov == 30, "CORRELATION");
+utab(uvx2, uvw2, umode == 1, uhov == 31, "MONO LOSS");
+utab(uvx3, uvw3, umode == 2, uhov == 35, "GONIOMETER");
+ucol(ucBG, 1); gfx_rect(uvx-2, floor(50*usc), uvx3+uvw3-uvx+4, floor(12*usc));
+ucol(udark ? ucHAIR : ucBORD, 1); gfx_rect(uox, floor(50*usc), floor(680*usc), 1);
+ucol(ucBG, 1);
+ubb = max(1, floor(1.4*usc));
+umode == 0 ? gfx_rect(uvx+ubb, floor(50*usc), uvw-2*ubb, 1) :
+umode == 1 ? gfx_rect(uvx2+ubb, floor(50*usc), uvw2-2*ubb, 1) :
+             gfx_rect(uvx3+ubb, floor(50*usc), uvw3-2*ubb, 1);
+
+// input: two round buttons, Stereo (L vs R) or Sidechain (this track vs inputs 3/4)
+ubx1 = floor(uox+520*usc); ubw1 = floor(46*usc);
+ubx2 = floor(uox+570*usc); ubw2 = floor(60*usc);
+uby = floor(24*usc); ubh = floor(18*usc);
+uin(ubx1, uby, ubw1, ubh) ? uhov = 11;
+uin(ubx2, uby, ubw2, ubh) ? uhov = 12;
+gfx_setfont(10);
+uk = 0;
+loop(2,
+  ukx = uk == 0 ? ubx1 : ubx2; ukw = uk == 0 ? ubw1 : ubw2;
+  ukon = uk == 0 ? !inm : inm; ukhot = uhov == 11 + uk;
+  ucol(ukon ? ucACT : (ukhot ? ucHAIR : ucSURF), 1); urr(ukx, uby, ukw, ubh, ubh/2, 1);
+  ucol(ukon ? ucACTO : ucBORD, 1); urr(ukx, uby, ukw, ubh, ubh/2, 0);
+  ucol(ukon ? ucACTX : (ukhot ? ucTEXT : ucMUTED), 1); utext(uk == 0 ? "Stereo" : "Sidechain", ukx + ukw/2, uby + 3*usc);
+  uk += 1;
+);
+
+// theme, top right corner: shows the mode it is in. Dark = a crescent moon, light = a sun, both drawn in outlines.
+utx = floor(uox+655*usc); uty = floor(33*usc); utr = 9*usc;
+uinc(utx, uty, utr+3*usc) ? uhov = 13;
+ucol(uhov == 13 ? ucTEXT : ucMUTED, 1);
+udark ? (
+  uarc(utx-1.2*usc, uty+0.9*usc, 7*usc, 2.166, 5.977, 1.3*usc);
+  uarc(utx-1.2*usc+3.69*usc, uty+0.9*usc-2.75*usc, 7*usc, 2.836, 5.307, 1.3*usc);
+) : (
+  uarc(utx, uty, 4.2*usc, 0, 6.2832, 1.3*usc);
+  uri = 0;
+  loop(8,
+    ura = uri*0.7854;
+    gfx_line(utx+sin(ura)*6.4*usc, uty-cos(ura)*6.4*usc, utx+sin(ura)*9*usc, uty-cos(ura)*9*usc, 1);
+    uri += 1;
+  );
+);
+
+// ---- display: correlation (+1 top, -1 bottom) or mono loss (0 dB top, down to the range)
+ugx = floor(uox+34*usc); ugw = floor(638*usc);
+ugy = floor(62*usc); ugh = floor((284+uex)*usc);
+upd = 7*usc;
+upt = uview ? 26*usc : upd;              // mono loss: room on top for the range button
+urng = slider9 < 0.5 ? 24 : slider9 < 1.5 ? 48 : 96;
+ucol(ucSTAGE, 1); urr(ugx, ugy, ugw, ugh, 4*usc, 1);
+!ugon ? (
+// red ground where the mono sum loses level: below 0 / below -3 dB
+uyt = uview ? umap(-3) : floor(ugy+ugh/2);
+ucol(ucMUTE, udark ? 0.07 : 0.05); gfx_rect(ugx+1, uyt, ugw-2, ugy+ugh-1-uyt);
+// grid and scale: five marks. Mono loss 24 dB: 0 -3 -6 -12 -24, 48 dB: 0 -6 -12 -24 -48, 96 dB: 0 -12 -24 -48 -96
+gfx_setfont(3);
+uk = 0;
+loop(5,
+  uview ? (
+    uv = uk == 0 ? 0 : -(urng/8)*2^(uk-1);
+    uyy = umap(uv);
+    ucol(uk == 0 || uv == -3 ? ucHAIR : ucLINE, 1);
+    uk < 4 ? gfx_rect(ugx+1, uyy, ugw-2, 1);
+    uv == 0 ? strcpy(#ulab, "0 dB") : sprintf(#ulab, "%d", uv);
+  ) : (
+    uv = 1 - uk*0.5;
+    uyy = umap(uv);
+    (uk > 0 && uk < 4) ? ( ucol(uk == 2 ? ucHAIR : ucLINE, 1); gfx_rect(ugx+1, uyy, ugw-2, 1); );
+    strcpy(#ulab, uk == 0 ? "+1" : uk == 1 ? "+0.5" : uk == 2 ? "0" : uk == 3 ? "-0.5" : "-1");
+  );
+  ucol(ucDIM, 1); uright(#ulab, ugx-4*usc, uyy-6*usc);
+  uk += 1;
+);
+// frequency grid
+ulfr = log(fhi/flo);
+uk = 0;
+loop(9,
+  uf = uk == 0 ? 50 : uk == 1 ? 100 : uk == 2 ? 200 : uk == 3 ? 500 : uk == 4 ? 1000 :
+       uk == 5 ? 2000 : uk == 6 ? 5000 : uk == 7 ? 10000 : 20000;
+  uf <= fhi*1.001 ? (
+    uxx = floor(ugx + ugw*log(uf/flo)/ulfr);
+    ucol(ucLINE, 0.6); gfx_rect(uxx, ugy+1, 1, ugh-2);
+    uf < 1000 ? sprintf(#ulab, "%d", uf) : sprintf(#ulab, "%dk", uf/1000);
+    gfx_measurestr(#ulab, ultw, ulth);
+    ucol(ucDIM, 1); gfx_x = floor(min(uxx - ultw/2, ugx + ugw - ultw)); gfx_y = ugy+ugh+3*usc; gfx_drawstr(#ulab);
+  );
+  uk += 1;
+);
+
+// bars: color always follows the correlation, height follows the view
+uxw = ugw/max(1, unb);
+ubw = max(1, floor(uxw*0.72));
+uy0 = umap(0);
+ucap = max(1, floor(2*usc));
+uhb = -1;
+(!ugon && uin(ugx, ugy, ugw, ugh)) ? (
+  uhov = 20;
+  uhb = max(0, min(unb-1, floor((mouse_x-ugx)/uxw)));
+  ucol(ucHAIR, 0.35); gfx_rect(floor(ugx + uhb*uxw), ugy+1, ceil(uxw), ugh-2);
+);
+unb <= 128 ? (
+  // one bar per band
+  ui = 0;
+  loop(unb,
+    ubx = floor(ugx + (ui+0.5)*uxw - ubw/2);
+    m_val[ui] ? (
+      uc = m_cor[ui];
+      uv = uview ? m_mon[ui] : uc;
+      uvh = uview ? m_hmo[ui] : m_hld[ui];
+      ua = max(0.3, min(1, (m_lev[ui]+80)/50));
+      !uon ? ( ua *= 0.35; );
+      uyv = umap(uv);
+      ucorr(uc, ua*0.55);
+      uyv < uy0 ? gfx_rect(ubx, uyv, ubw, uy0-uyv) : gfx_rect(ubx, uy0+1, ubw, max(1, uyv-uy0));
+      ucorr(uc, uon ? 1 : 0.4);
+      gfx_rect(ubx, uyv < uy0 ? uyv : uyv - ucap + 1, ubw, ucap);
+      // the lowest reading held: a short line in text color
+      (slider5 >= 0.5 && uvh < uv - (uview ? 0.5 : 0.02)) ? (
+        ucol(ucTEXT, uon ? 0.85 : 0.35); gfx_rect(ubx, umap(uvh), ubw, max(1, floor(1.5*usc)));
+      );
+    );
+    ui += 1;
+  );
+) : (
+  // more bands than room for bars: one pixel column each. Where several bands share a column,
+  // the worst of them is shown, so a narrow phase problem never disappears.
+  upx = 0;
+  loop(ugw-2,
+    ub0 = floor((upx+1)*unb/ugw); ub1 = max(ub0, floor((upx+2)*unb/ugw)-1);
+    uvm = 1000; uhm = 1000; ulm = -200; ucm = 0; ufound = 0;
+    ui = ub0;
+    loop(ub1-ub0+1,
+      m_val[ui] ? (
+        uv = uview ? m_mon[ui] : m_cor[ui];
+        uv < uvm ? ( uvm = uv; ulm = m_lev[ui]; ucm = m_cor[ui]; );
+        uhm = min(uhm, uview ? m_hmo[ui] : m_hld[ui]);
+        ufound = 1;
+      );
+      ui += 1;
+    );
+    ufound ? (
+      ua = max(0.3, min(1, (ulm+80)/50));
+      !uon ? ( ua *= 0.35; );
+      uyv = umap(uvm);
+      ucorr(ucm, ua*0.55);
+      uyv < uy0 ? gfx_rect(ugx+1+upx, uyv, 1, uy0-uyv) : gfx_rect(ugx+1+upx, uy0+1, 1, max(1, uyv-uy0));
+      ucorr(ucm, uon ? 1 : 0.4);
+      gfx_rect(ugx+1+upx, uyv < uy0 ? uyv : uyv - ucap + 1, 1, ucap);
+      (slider5 >= 0.5 && uhm < uvm - (uview ? 0.5 : 0.02)) ? (
+        ucol(ucTEXT, uon ? 0.85 : 0.35); gfx_rect(ugx+1+upx, umap(uhm), 1, max(1, floor(1.5*usc)));
+      );
+    );
+    upx += 1;
+  );
+);
+// reference curve: a thin line through the band centers, broken where a band had no signal
+(refon && urnb == unb) ? (
+  ucol(ucTEXT, 0.75);
+  ulp = 0;
+  ui = 0;
+  loop(unb,
+    m_rfv[ui] ? (
+      uxx = ugx + (ui+0.5)*uxw; uyy = umap(uview ? m_rfm[ui] : m_rfc[ui]);
+      ulp ? ( gfx_line(ulx, uly, uxx, uyy, 1); gfx_line(ulx, uly+1, uxx, uyy+1, 1); );
+      ulx = uxx; uly = uyy; ulp = 1;
+    ) : ( ulp = 0; );
+    ui += 1;
+  );
+);
+
+// range button, mono loss only: top right inside the display
+uview ? (
+  gfx_setfont(3);
+  sprintf(#urs, "Range %d dB", urng);
+  gfx_measurestr(#urs, ultw, ulth);
+  urw = floor(ultw + 16*usc); urh = floor(18*usc);
+  urx2 = floor(ugx + ugw - urw - 5*usc); ury2 = floor(ugy + 4*usc);
+  uin(urx2, ury2, urw, urh) ? uhov = 32;
+  ubtn(urx2, ury2, urw, urh, 0, uhov == 32, #urs);
+);
+) : (
+  // ---- goniometer: a square in the middle, balance on the left, width on the right
+  ugs = floor(ugh - 2*upd);
+  ugcx = floor(ugx + ugw/2); ugcy = floor(ugy + ugh/2);
+  ugr = ugs/2 - 6*usc;
+  // the trace is drawn into its own image, which fades a little every frame (afterglow)
+  ugs != ugbs ? (
+    gfx_setimgdim(1, ugs, ugs); ugbs = ugs;
+    gfx_dest = 1; ucol(ucSTAGE, 1); gfx_rect(0, 0, ugs, ugs); gfx_dest = -1;
+  );
+  gfx_dest = 1;
+  !ufrz ? ( ucol(ucSTAGE, 0.3); gfx_rect(0, 0, ugs, ugs); );
+  // the samples since the last frame (at most 4096)
+  ugn = min(4096, (gwp - ugrp + 8192) & 8191);
+  ugst = (gwp - ugn + 8192) & 8191;
+  ugpk2 = 0;
+  ui = 0;
+  loop(ugn,
+    ugj = (ugst + ui) & 8191;
+    ugpk2 = max(ugpk2, sqr(m_gx[ugj]) + sqr(m_gy[ugj]));
+    ui += 1;
+  );
+  // automatic gain: follows the loudest point, falls back slowly, at most +24 dB
+  ugpk = max(sqrt(ugpk2), ugpk*0.96);
+  ugain = min(16, 0.9/max(ugpk, 10^-9));
+  uon && ugn > 1 ? (
+    ucorr(bcor, 0.85);
+    ui = 0;
+    loop(ugn,
+      ugj = (ugst + ui) & 8191;
+      ugpx = max(0, min(ugs-1, ugs/2 + m_gx[ugj]*ugain*ugr));
+      ugpy = max(0, min(ugs-1, ugs/2 - m_gy[ugj]*ugain*ugr));
+      ui == 0 ? ( gfx_x = ugpx; gfx_y = ugpy; ) : gfx_lineto(ugpx, ugpy, 1);
+      ui += 1;
+    );
+  );
+  ugrp = gwp;
+  gfx_dest = -1;
+  gfx_a = 1;
+  gfx_blit(1, 1, 0, 0, 0, ugs, ugs, ugcx - ugs/2, ugcy - ugs/2, ugs, ugs);
+  // scale on top: circle, mid (up), side (across), left and right diagonals
+  ucol(ucHAIR, 1); gfx_circle(ugcx, ugcy, ugr, 0, 1);
+  gfx_line(ugcx, ugcy - ugr, ugcx, ugcy + ugr, 1);
+  ucol(ucLINE, 1);
+  gfx_line(ugcx - ugr, ugcy, ugcx + ugr, ugcy, 1);
+  gfx_line(ugcx - ugr*0.7071, ugcy - ugr*0.7071, ugcx + ugr*0.7071, ugcy + ugr*0.7071, 1);
+  gfx_line(ugcx + ugr*0.7071, ugcy - ugr*0.7071, ugcx - ugr*0.7071, ugcy + ugr*0.7071, 1);
+  gfx_setfont(6); ucol(ucDIM, 1);
+  utext("M", ugcx, ugcy - ugr - 2*usc);
+  utext(inm ? "MAIN" : "L", ugcx - ugr*0.7071 - (inm ? 18 : 9)*usc, ugcy - ugr*0.7071 - 12*usc);
+  utext(inm ? "SC" : "R", ugcx + ugr*0.7071 + 9*usc, ugcy - ugr*0.7071 - 12*usc);
+  uright("+S", ugcx - ugr - 5*usc, ugcy - 6*usc);
+  gfx_x = ugcx + ugr + 5*usc; gfx_y = ugcy - 6*usc; gfx_drawstr("-S");
+  gfx_setfont(3);
+  ugdb = floor(20*log10(ugain)+0.5);
+  ugdb > 0 ? sprintf(#ugt, "Auto gain +%d dB", ugdb) : ugdb < 0 ? sprintf(#ugt, "Auto gain %d dB", ugdb) : strcpy(#ugt, "Auto gain 0 dB");
+  uright(#ugt, ugcx + ugs/2, ugy + ugh - 18*usc);
+  uin(ugcx - ugs/2, ugy, ugs, ugh) ? uhov = 22;
+
+  // side panels: balance and width, each a value and a bar
+  ucpw = floor(150*usc);
+  uk = 0;
+  loop(2,
+    ucpx = uk == 0 ? floor(ugx + 14*usc) : floor(ugx + ugw - 14*usc - ucpw);
+    ucpy = floor(ugcy - 34*usc);
+    gfx_setfont(7); ucol(ucMUTED, 1); utext(uk == 0 ? "BALANCE" : "WIDTH", ucpx + ucpw/2, ucpy);
+    bval && uon ? (
+      uk == 0 ? (
+        abs(bbal) < 0.25 ? strcpy(#ugv, "Centered") : sprintf(#ugv, "%s %.1f dB", bbal > 0 ? "L" : "R", abs(bbal));
+        ugf = max(-1, min(1, bbal/12));
+      ) : (
+        sprintf(#ugv, "S/M %.1f dB", max(-60, bwid));
+        ugf = max(0, min(1, (bwid+40)/46));
+      );
+    ) : (
+      strcpy(#ugv, "--"); ugf = uk == 0 ? 0 : -1;
+    );
+    gfx_setfont(4); ucol(ucTEXT, 1); utext(#ugv, ucpx + ucpw/2, ucpy + 16*usc);
+    ucby = floor(ucpy + 38*usc); ucbh = floor(8*usc);
+    ucol(ucSURF, 1); urr(ucpx, ucby, ucpw, ucbh, 2*usc, 1);
+    ucol(ucACTO, uon ? 0.8 : 0.3);
+    uk == 0 ? (
+      ugf > 0 ? gfx_rect(floor(ucpx + ucpw/2*(1-ugf)), ucby+1, floor(ucpw/2*ugf), ucbh-2)
+              : gfx_rect(floor(ucpx + ucpw/2), ucby+1, floor(-ucpw/2*ugf), ucbh-2);
+      ucol(ucHAIR, 1); gfx_rect(floor(ucpx + ucpw/2), ucby, 1, ucbh);
+    ) : (
+      ugf > 0 ? gfx_rect(ucpx+1, ucby+1, floor((ucpw-2)*ugf), ucbh-2);
+      ucol(ucHAIR, 1); gfx_rect(floor(ucpx + ucpw*40/46), ucby, 1, ucbh);   // 0 dB: side as loud as mid
+    );
+    ucol(ucBORD, 1); urr(ucpx, ucby, ucpw, ucbh, 2*usc, 0);
+    gfx_setfont(3); ucol(ucDIM, 1);
+    uk == 0 ? (
+      gfx_x = ucpx; gfx_y = ucby + ucbh + 3*usc; gfx_drawstr("L");
+      uright("R", ucpx + ucpw, ucby + ucbh + 3*usc);
+    ) : (
+      gfx_x = ucpx; gfx_y = ucby + ucbh + 3*usc; gfx_drawstr("mono");
+      uright("wide", ucpx + ucpw, ucby + ucbh + 3*usc);
+    );
+    uin(ucpx, ucpy, ucpw, 70*usc) ? ( uhov = 23 + uk; );
+    uk += 1;
+  );
+);
+// frozen: a small label top left in the display
+ufrz ? (
+  gfx_setfont(6);
+  ucol(ucACT, 1); urr(ugx+8*usc, ugy+6*usc, 58*usc, 18*usc, 3*usc, 1);
+  ucol(ucACTO, 1); urr(ugx+8*usc, ugy+6*usc, 58*usc, 18*usc, 3*usc, 0);
+  ucol(ucACTX, 1); utext("Paused", ugx+37*usc, ugy+8*usc);
+);
+ucol(ucHAIR, 1); urr(ugx, ugy, ugw, ugh, 4*usc, 0);
+
+// ---- total: the full signal on one classic bar
+umy = floor((364+uex)*usc); umh = floor(14*usc); umw = floor(586*usc);
+gfx_setfont(8); ucol(ucDIM, 1); uright("TOTAL", ugx-4*usc, umy+3*usc);
+ucol(ucSURF, 1); urr(ugx, umy, umw, umh, 3*usc, 1);
+ucol(ucMUTE, udark ? 0.07 : 0.05); gfx_rect(ugx+1, umy+1, floor(umw/2)-1, umh-2);
+umc = floor(ugx + umw/2);
+bval ? (
+  uxv = floor(ugx + umw*(bcor+1)/2);
+  ucorr(bcor, uon ? 0.55 : 0.2);
+  bcor >= 0 ? gfx_rect(umc, umy+2*usc, max(1, uxv-umc), umh-4*usc) : gfx_rect(uxv, umy+2*usc, max(1, umc-uxv), umh-4*usc);
+  ucorr(bcor, uon ? 1 : 0.4);
+  gfx_rect(uxv - floor(usc), umy+1, max(2, floor(2*usc)), umh-2);
+  (slider5 >= 0.5 && bhld < bcor - 0.02) ? (
+    ucol(ucTEXT, uon ? 0.85 : 0.35); gfx_rect(floor(ugx + umw*(bhld+1)/2), umy+2*usc, max(1, floor(1.5*usc)), umh-4*usc);
+  );
+);
+ucol(ucHAIR, 1); gfx_rect(umc, umy+1, 1, umh-2);
+ucol(ucHAIR, 1); urr(ugx, umy, umw, umh, 3*usc, 0);
+gfx_setfont(4);
+bval ? usign(#utot, bcor) : strcpy(#utot, "--");
+ucol(ucTEXT, uon ? 1 : 0.5); uright(#utot, ugx+ugw, umy);
+uin(ugx, umy, ugw, umh) ? uhov = 21;
+
+// ---- controls: Bands, Averaging, Offset, Reference, Hold. The goniometer page shows only what acts on it.
+ukr = 21*usc;
+uky = floor((424+uex)*usc);
+ulby = uky - ukr - 20*usc;
+unbs = m_bl[max(0, min(9, floor(slider1+0.5)))];
+usel = udrag == 2 || (uhov == 1 && (mouse_cap & 16));   // Alt on Bands: selectivity
+usel ? sprintf(#uv1, "Sel. %d %%", floor(slider2+0.5)) : sprintf(#uv1, "%d", unbs);
+slider3 < 1000 ? sprintf(#uv3, "%d ms", floor(slider3+0.5)) : sprintf(#uv3, "%.1f s", slider3/1000);
+!ugon ? uknob(1, uox+80*usc, uky, ukr, usel ? ufrac(2) : ufrac(1), "BANDS", #uv1, usel ? 0 : 9);
+uknob(3, uox+190*usc, uky, ukr, ufrac(3), "AVERAGING", #uv3, 0);
+
+// offset: info only, the audio is never moved
+uofx = floor(uox+262*usc); uofw = floor(160*usc); uofy = floor(uky-24*usc); uofh = floor(48*usc);
+gfx_setfont(7); ucol(ucMUTED, 1); utext("OFFSET", uofx+uofw/2, ulby);
+ucol(ucSURF, 1); urr(uofx, uofy, uofw, uofh, 4*usc, 1);
+ucol(ucBORD, 1); urr(uofx, uofy, uofw, uofh, 4*usc, 0);
+uin(uofx, uofy, uofw, uofh+22*usc) ? uhov = 34;
+ofs_ok ? (
+  uoms = abs(ofs_lag)/srate*1000;
+  sprintf(#uo1, uoms < 0.995 ? "%.2f ms" : uoms < 9.95 ? "%.1f ms" : "%.0f ms", uoms);
+  uosm = floor(abs(ofs_lag)+0.5);
+  uosm == 0 ? strcpy(#uo2, "0 samples  ·  in time") :
+    sprintf(#uo2, "%d %s  ·  %s", uosm, uosm == 1 ? "sample" : "samples",
+            ofs_lag < 0 ? (inm ? "sidechain is late" : "right is late") : (inm ? "main is late" : "left is late"));
+) : (
+  strcpy(#uo1, "--");
+  strcpy(#uo2, bval ? "no clear offset" : "no signal to compare");
+);
+gfx_setfont(5); ucol(ucTEXT, 1); utext(#uo1, uofx+uofw/2, uofy+4*usc);
+gfx_setfont(3); ucol(ucMUTED, 1); utext(#uo2, uofx+uofw/2, uofy+24*usc);
+ofs_ok ? (
+  ofs_sgn < 0 ? (
+    ucol(ucMUTE, 1); urr(uofx+20*usc, uky+ukr+3*usc, uofw-40*usc, 17*usc, 3*usc, 1);
+    gfx_setfont(6); ucol(0xFFFFFF, 1); utext("Polarity flipped", uofx+uofw/2, uky+ukr+5*usc);
+  ) : (
+    gfx_setfont(2); ucol(ucMUTED, 1); utext("Polarity OK", uofx+uofw/2, uky+ukr+4*usc);
+  );
+);
+
+ubh2 = floor(22*usc); uby2 = floor(uky-11*usc);
+// reference: capture the current curve as a line, click again to clear it (not on the goniometer page)
+!ugon ? (
+  urfx = floor(uox+466*usc); urfw = floor(80*usc);
+  gfx_setfont(7); ucol(ucMUTED, 1); utext("REFERENCE", urfx+urfw/2, ulby);
+  uin(urfx, uby2, urfw, ubh2) ? uhov = 33;
+  gfx_setfont(3);
+  ubtn(urfx, uby2, urfw, ubh2, refon, uhov == 33, refon ? "Clear" : "Capture");
+);
+
+// hold lows: one switch. Click: off / 3 s. Shift-click: infinite.
+uhx = floor(uox+590*usc); uhw = floor(82*usc);
+gfx_setfont(7); ucol(ucMUTED, 1); utext("HOLD LOWS", uhx+uhw/2, ulby);
+uin(uhx, uby2, uhw, ubh2) ? uhov = 4;
+gfx_setfont(3);
+ubtn(uhx, uby2, uhw, ubh2, slider5 >= 0.5, uhov == 4, slider5 < 0.5 ? "Off" : slider5 < 1.5 ? "3 s" : "Infinite");
+
+// reset: its own button under Hold lows, set apart, so it reads as a reset of the whole plugin
+urbx = floor(uox+590*usc); urbw = floor(82*usc); urby = floor(uky+28*usc); urbh = floor(20*usc);
+uin(urbx, urby, urbw, urbh) ? uhov = 14;
+gfx_setfont(3);
+ubtn(urbx, urby, urbw, urbh, 0, uhov == 14, "");
+ucol(uhov == 14 ? ucTEXT : ucMUTED, 1);
+gfx_measurestr("Reset plugin", urtw, urth);
+urx = floor(urbx + urbw/2 - (urtw + 16*usc)/2 + 6*usc); ury = floor(urby + urbh/2);
+uarc(urx, ury, 5*usc, 0.9, 6.0, 1.3*usc);
+ua0 = 6.0;
+uax = urx + sin(ua0)*5*usc; uay = ury - cos(ua0)*5*usc;
+gfx_triangle(uax + cos(ua0)*3.5*usc, uay + sin(ua0)*3.5*usc,
+             uax + sin(ua0)*2.8*usc, uay - cos(ua0)*2.8*usc,
+             uax - sin(ua0)*2.8*usc, uay + cos(ua0)*2.8*usc);
+gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plugin");
+
+// ---- status line, bottom left, above the footer line: explains whatever is under the mouse
+// footer: bottom left, the same in every dmajorsound plugin
+ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc), 1);
+gfx_setfont(10); ucol(ucDIM, 1);
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0 - developed with AI assistance");
+// footer right: dmajorsound.com
+gfx_setfont(10); ucol(ucDIM, 1); uright("dmajorsound.com", uox+664*usc, (503+uex)*usc);
+
+gfx_setfont(2); ucol(ucMUTED, 1);
+gfx_x = uox+16*usc; gfx_y = (482+uex)*usc;
+uhov == 1 ? gfx_drawstr(usel ? "Selectivity (Alt-drag): higher makes each band narrower and sharper, lower blends neighbors."
+                             : "Bands: how many frequency bands the meter splits the signal into. Alt-drag sets the selectivity.") :
+uhov == 3 ? gfx_drawstr(unbs > 64 ? "Averaging: above 64 bands, mids and highs need at least 0.1 s, the bass about 0.3 s."
+                                   : "Averaging: short shows every hit, long shows the overall picture.") :
+uhov == 4 ? gfx_drawstr("Hold lows: keeps the lowest reading of each band for 3 s. Shift-click holds until you click the display.") :
+uhov == 10 ? gfx_drawstr(ufrz ? "Off: the meter shows its last picture. Click to switch it on." : "On: the meter runs. Off keeps the last picture to read it. The audio always passes untouched.") :
+uhov == 11 ? gfx_drawstr("Stereo: compares left and right of this track.") :
+uhov == 12 ? gfx_drawstr("Sidechain: compares this track (inputs 1/2) with inputs 3/4, e.g. boom vs. lav.") :
+uhov == 13 ? gfx_drawstr(udark ? "Dark mode. Click for light." : "Light mode. Click for dark.") :
+uhov == 14 ? gfx_drawstr("Reset plugin: every setting back to its default, holds and reference cleared.") :
+uhov == 30 ? gfx_drawstr("Correlation: +1 in phase, 0 unrelated, -1 out of phase.") :
+uhov == 31 ? gfx_drawstr("Mono loss: how many dB each band drops when the two sides are summed to mono.") :
+uhov == 35 ? gfx_drawstr("Goniometer: the stereo image as a trace. Correlation stays below.") :
+uhov == 22 ? gfx_drawstr("Upright line: mono. Lying flat: out of phase. Round cloud: wide and unrelated. Leaning: one side louder.") :
+uhov == 23 ? gfx_drawstr("Balance: how much louder one side is than the other.") :
+uhov == 24 ? gfx_drawstr("Width: side against mid. Very low is mono, around 0 dB is very wide, above 0 dB the sides work against each other.") :
+uhov == 32 ? gfx_drawstr("Range: how deep the mono loss scale reaches. Click for 24, 48 or 96 dB.") :
+uhov == 33 ? gfx_drawstr(refon ? "Reference: click to clear the line." : "Reference: keeps the current curve as a line, to compare before and after.") :
+uhov == 34 ? gfx_drawstr("Offset: the time shift between the two sides, found across the spectrum. Info only, the audio is not moved.") :
+(uhov == 20 && uhb >= 0) ? (
+  ufreq(#uq0, m_fc[uhb]);
+  ufreq(#uq1, flo*(fhi/flo)^(uhb/unb));
+  ufreq(#uq2, flo*(fhi/flo)^((uhb+1)/unb));
+  m_val[uhb] ? (
+    usign(#uq3, m_cor[uhb]);
+    sprintf(#uq4, "%.1f", m_mon[uhb]);
+    sprintf(#ust, "%s (%s to %s): %s, mono %s dB, level %d dB.%s", #uq0, #uq1, #uq2, #uq3, #uq4, floor(m_lev[uhb]+0.5),
+            slider5 >= 0.5 ? " Click clears the lows." : "");
+  ) : (
+    sprintf(#ust, "%s (%s to %s): nothing to compare in this band.", #uq0, #uq1, #uq2);
+  );
+  gfx_drawstr(#ust);
+) :
+uhov == 21 ? gfx_drawstr("Total: the full signal, as on a classic correlation meter. Click clears the low.") :
+ufrz ? gfx_drawstr("Off: the display holds still. Move over the bands to read them, switch on to go on.") :
+(ofs_ok && ofs_sgn < 0) ? ( ucol(ucMUTE, 1); gfx_drawstr("Polarity flipped: the two sides work against each other. Flip the phase of one side."); ) :
+(inm && blev_r <= -100 && blev_l > -100) ? gfx_drawstr("No signal on the sidechain. Route the second source to inputs 3/4 of this track.") :
+(!inm && (blev_l > -100) != (blev_r > -100)) ? gfx_drawstr("Only one side carries signal, so there is nothing to compare.") :
+gfx_drawstr(ugon ? "Goniometer: the trace takes the color of the correlation. The bar below is the correlation of the full signal." :
+            uview ? "Mono loss: 0 dB keeps its level in mono, -3 dB is two unrelated sides, deeper means the sides cancel."
+                   : "+1 in phase, 0 unrelated, -1 out of phase (cancels in mono). Green and blue hold up in mono, red loses level.");
+
+// ---- mouse
+upress ? (
+  (uhov == 1 || uhov == 3) ? (
+    unow = time_precise();
+    uid = (uhov == 1 && (mouse_cap & 16)) ? 2 : uhov;     // Alt on Bands: selectivity
+    ((mouse_cap & 4) || (uid == ulast && unow - ulastt < 0.3)) ? (
+      udef(uid); udrag = 0;
+    ) : (
+      udrag = uid; udy = mouse_y; udacc = ufrac(uid);
+    );
+    ulast = uid; ulastt = unow;
+  ) : uhov == 4 ? (
+    (mouse_cap & 8) ? ( slider5 = slider5 >= 1.5 ? 1 : 2; ) : ( slider5 = slider5 >= 0.5 ? 0 : 1; );
+    slider_automate(16); req_clr = 1;
+  ) : uhov == 10 ? (
+    slider6 = ufrz ? 0 : 1; slider_automate(32);
+  ) : uhov == 11 ? (
+    slider4 = 0; slider_automate(8); req_clr = 1;
+  ) : uhov == 12 ? (
+    slider4 = 1; slider_automate(8); req_clr = 1;
+  ) : uhov == 13 ? (
+    slider7 = udark ? 1 : 0; slider_automate(64);
+  ) : uhov == 14 ? (
+    slider1 = 8; slider2 = 50; slider3 = 300; slider4 = 0; slider5 = 1; slider6 = 0; slider9 = 1;
+    slider_automate(1|2|4|8|16|32|256); req_clr = 1; refon = 0;
+  ) : (uhov == 20 || uhov == 21) ? (
+    req_clr = 1;
+  ) : uhov == 35 ? (
+    slider8 = 2; slider_automate(128);
+  ) : uhov == 30 ? (
+    slider8 = 0; slider_automate(128);
+  ) : uhov == 31 ? (
+    slider8 = 1; slider_automate(128);
+  ) : uhov == 32 ? (
+    slider9 = slider9 >= 1.5 ? 0 : floor(slider9+0.5) + 1; slider_automate(256);
+  ) : uhov == 33 ? (
+    refon ? ( refon = 0; ) : (
+      ui = 0;
+      loop(unb,
+        m_rfc[ui] = m_cor[ui]; m_rfm[ui] = m_mon[ui]; m_rfv[ui] = m_val[ui];
+        ui += 1;
+      );
+      urnb = unb; refon = 1;
+    );
+  );
+);
+(ulb && udrag > 0) ? (
+  udacc += (udy - mouse_y)/(160*usc) * ((mouse_cap & 8) ? 0.1 : 1);
+  udacc = max(0, min(1, udacc));
+  udy = mouse_y;
+  uset(udrag, udacc);
+);
+!ulb ? ( udrag = 0; );
+ulbp = ulb;
+mouse_wheel != 0 ? (
+  (uhov == 1 || uhov == 3) ? (
+    uid = (uhov == 1 && (mouse_cap & 16)) ? 2 : uhov;
+    uset(uid, ufrac(uid) + (mouse_wheel > 0 ? 1 : -1)*(uid == 1 ? 1/9 : (mouse_cap & 8) ? 0.005 : 0.03));
+  );
+  mouse_wheel = 0;
+);

@@ -1,0 +1,146 @@
+{
+ "desc": "Binocular",
+ "sliders": [
+  {
+   "idx": 1,
+   "default": 8.0,
+   "lo": 0.0,
+   "hi": 9.0,
+   "step": 1.0,
+   "label": "Bands",
+   "hidden": true,
+   "enums": [
+    "4",
+    "8",
+    "12",
+    "16",
+    "24",
+    "32",
+    "48",
+    "64",
+    "128",
+    "256"
+   ]
+  },
+  {
+   "idx": 2,
+   "default": 50.0,
+   "lo": 0.0,
+   "hi": 100.0,
+   "step": 0.1,
+   "label": "Selectivity (%)",
+   "hidden": true,
+   "enums": null
+  },
+  {
+   "idx": 3,
+   "default": 300.0,
+   "lo": 10.0,
+   "hi": 5000.0,
+   "step": 1.0,
+   "label": "Averaging (ms)",
+   "hidden": true,
+   "enums": null
+  },
+  {
+   "idx": 4,
+   "default": 0.0,
+   "lo": 0.0,
+   "hi": 1.0,
+   "step": 1.0,
+   "label": "Input",
+   "hidden": true,
+   "enums": [
+    "Stereo",
+    "Sidechain"
+   ]
+  },
+  {
+   "idx": 5,
+   "default": 1.0,
+   "lo": 0.0,
+   "hi": 2.0,
+   "step": 1.0,
+   "label": "Hold",
+   "hidden": true,
+   "enums": [
+    "Off",
+    "3 s",
+    "Infinite"
+   ]
+  },
+  {
+   "idx": 6,
+   "default": 0.0,
+   "lo": 0.0,
+   "hi": 1.0,
+   "step": 1.0,
+   "label": "Freeze",
+   "hidden": true,
+   "enums": [
+    "Off",
+    "On"
+   ]
+  },
+  {
+   "idx": 7,
+   "default": 0.0,
+   "lo": 0.0,
+   "hi": 1.0,
+   "step": 1.0,
+   "label": "Theme",
+   "hidden": true,
+   "enums": [
+    "Dark",
+    "Light"
+   ]
+  },
+  {
+   "idx": 8,
+   "default": 0.0,
+   "lo": 0.0,
+   "hi": 2.0,
+   "step": 1.0,
+   "label": "View",
+   "hidden": true,
+   "enums": [
+    "Correlation",
+    "Mono loss",
+    "Goniometer"
+   ]
+  },
+  {
+   "idx": 9,
+   "default": 1.0,
+   "lo": 0.0,
+   "hi": 2.0,
+   "step": 1.0,
+   "label": "Range",
+   "hidden": true,
+   "enums": [
+    "24 dB",
+    "48 dB",
+    "96 dB"
+   ]
+  }
+ ],
+ "strings": {
+  "#lg1": 90000,
+  "#lg2": 90001,
+  "#ulab": 90002,
+  "#urs": 90003,
+  "#ugt": 90004,
+  "#ugv": 90005,
+  "#utot": 90006,
+  "#uv1": 90007,
+  "#uv3": 90008,
+  "#uo1": 90009,
+  "#uo2": 90010,
+  "#uq0": 90011,
+  "#uq1": 90012,
+  "#uq2": 90013,
+  "#uq3": 90014,
+  "#uq4": 90015,
+  "#ust": 90016
+ }
+}

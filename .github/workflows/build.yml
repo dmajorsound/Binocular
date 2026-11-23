@@ -1,0 +1,62 @@
+# Builds Binocular on GitHub's own Macs and PCs: macOS VST3 + AU (Universal: Apple Silicon and Intel, ad-hoc signed),
+# Windows VST3. The results are under "Actions" -> the run -> "Artifacts".
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JUCE_COMMIT: 654bdbc7a9db0dae90849b44abe91f339e9f0768   # JUCE 9.0.6, the version Binocular was tested with
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: JUCE
+        run: |
+          git init ../juce
+          git -C ../juce remote add origin https://github.com/juce-framework/JUCE.git
+          git -C ../juce fetch --depth 1 origin $JUCE_COMMIT
+          git -C ../juce checkout FETCH_HEAD
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          cmake --build build --config Release --target Binocular_VST3 Binocular_AU --parallel 4
+      - name: Sign (ad hoc) and pack
+        run: |
+          mkdir -p out
+          cp -R build/Binocular_artefacts/Release/VST3/Binocular.vst3 out/
+          cp -R build/Binocular_artefacts/Release/AU/Binocular.component out/
+          codesign --force --deep -s - out/Binocular.vst3
+          codesign --force --deep -s - out/Binocular.component
+          ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0_mac_VST3.zip
+          ditto -c -k --keepParent out/Binocular.component Binocular_1.0_mac_AU.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binocular_1.0_mac
+          path: |
+            Binocular_1.0_mac_VST3.zip
+            Binocular_1.0_mac_AU.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JUCE
+        shell: bash
+        run: |
+          git init ../juce
+          git -C ../juce remote add origin https://github.com/juce-framework/JUCE.git
+          git -C ../juce fetch --depth 1 origin $JUCE_COMMIT
+          git -C ../juce checkout FETCH_HEAD
+      - name: Build
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release --target Binocular_VST3 --parallel 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binocular_1.0_windows_VST3
+          path: build/Binocular_artefacts/Release/VST3/Binocular.vst3
