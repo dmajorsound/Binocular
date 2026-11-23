@@ -1,11 +1,17 @@
 # Builds Binocular on GitHub's own Macs and PCs: macOS VST3 + AU (Universal: Apple Silicon and Intel, ad-hoc signed),
-# Windows VST3. The results are under "Actions" -> the run -> "Artifacts".
+# Windows VST3, plus installers (Mac .pkg, Windows .exe). The results are under "Actions" -> the run -> "Artifacts".
+# "Run workflow" with a version (e.g. v1.0) also publishes the installers as a GitHub release.
 name: Build
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release with this version tag, e.g. v1.0 (empty = just build)"
+        required: false
+        default: ""
 
 env:
   JUCE_COMMIT: 654bdbc7a9db0dae90849b44abe91f339e9f0768   # JUCE 9.0.6, the version Binocular was tested with
@@ -25,19 +31,39 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           cmake --build build --config Release --target Binocular_VST3 Binocular_AU --parallel 4
-      - name: Sign (ad hoc) and pack
+      - name: Strip, sign (ad hoc) and pack
         run: |
           mkdir -p out
           cp -R build/Binocular_artefacts/Release/VST3/Binocular.vst3 out/
           cp -R build/Binocular_artefacts/Release/AU/Binocular.component out/
+          # remove debug symbols (smaller file, same plugin)
+          strip -x out/Binocular.vst3/Contents/MacOS/Binocular
+          strip -x out/Binocular.component/Contents/MacOS/Binocular
+          lipo -info out/Binocular.vst3/Contents/MacOS/Binocular
+          du -sh out/Binocular.vst3 out/Binocular.component
           codesign --force --deep -s - out/Binocular.vst3
           codesign --force --deep -s - out/Binocular.component
           ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0_mac_VST3.zip
           ditto -c -k --keepParent out/Binocular.component Binocular_1.0_mac_AU.zip
+      - name: Installer (.pkg)
+        run: |
+          mkdir -p payload ui
+          cp -R out/Binocular.vst3 payload/
+          pkgbuild --analyze --root payload comp.plist
+          plutil -replace 0.BundleIsRelocatable -bool NO comp.plist
+          pkgbuild --root payload --component-plist comp.plist --install-location /Library/Audio/Plug-Ins/VST3 \
+            --identifier com.dmajorsound.binocular.vst3 --version 1.0 binocular-vst3.pkg
+          cp installer/mac_ui/welcome.html installer/mac_ui/logo.png installer/mac_ui/logo-dark.png ui/
+          tiffutil -cathidpicheck installer/mac_ui/background.png installer/mac_ui/background@2x.png -out ui/background.tiff
+          tiffutil -cathidpicheck installer/mac_ui/background-darkAqua.png installer/mac_ui/background-darkAqua@2x.png -out ui/background-darkAqua.tiff
+          productbuild --distribution installer/mac_ui/distribution.xml --resources ui \
+            --package-path . Binocular_1.0_installer_mac.pkg
+          ls -la Binocular_1.0_installer_mac.pkg
       - uses: actions/upload-artifact@v4
         with:
           name: Binocular_1.0_mac
           path: |
+            Binocular_1.0_installer_mac.pkg
             Binocular_1.0_mac_VST3.zip
             Binocular_1.0_mac_AU.zip
 
@@ -56,7 +82,78 @@ jobs:
         run: |
           cmake -S . -B build -A x64
           cmake --build build --config Release --target Binocular_VST3 --parallel 4
+      - name: Installer (.exe)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\win\binocular.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: Binocular_1.0_windows_VST3
-          path: build/Binocular_artefacts/Release/VST3/Binocular.vst3
+          name: Binocular_1.0_windows
+          path: |
+            installer/win/Output/Binocular_1.0_installer_win64.exe
+            build/Binocular_artefacts/Release/VST3/Binocular.vst3
+
+  # "Run workflow" with a version (e.g. v1.0) publishes the installers as a GitHub release
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release != ''
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release }}
+        run: |
+          cat > notes.txt <<'NOTES'
+          <p align="center">
+          <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dmajorsound/olAAF/main/installer/mac_ui/logo-dark.png">
+          <img src="https://raw.githubusercontent.com/dmajorsound/olAAF/main/installer/mac_ui/logo.png" alt="dmajorsound" width="200">
+          </picture>
+          </p>
+
+          <h2 align="center">Binocular – Correlation Meter</h2>
+          <p align="center"><i>Mmm… coherent.</i></p>
+
+          Free multiband correlation meter and goniometer by dmajorsound. Shows phase problems per frequency band, mono loss, time offset and polarity between left and right (or against a sidechain). The audio passes through untouched.
+
+          ### Download
+          - **Mac** (Apple Silicon and Intel): `Binocular_VERSION_installer_mac.pkg` below
+          - **Windows** (64-bit): `Binocular_VERSION_installer_win64.exe` below
+
+          ### Install
+          1. Quit REAPER.
+          2. Open the installer and click through. It puts Binocular.vst3 into the common VST3 folder.
+          3. Start REAPER. If Binocular does not show up: **Options → Preferences → Plug-ins → VST → Re-scan**.
+
+          > [!CAUTION]
+          > **Mac: "Binocular can't be opened because it is from an unidentified developer"**
+          >
+          > The installer is not signed by Apple. Do **not** double-click it again. Instead:
+          > 1. **Right-click** (or Control-click) the .pkg and choose **Open**.
+          > 2. Click **Open** in the warning.
+          >
+          > Still blocked? Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Binocular.
+
+          > [!CAUTION]
+          > **Windows: "Windows protected your PC" (SmartScreen)**
+          >
+          > The installer is not signed by Microsoft.
+          > 1. Click **More info**.
+          > 2. Click **Run anyway**.
+          >
+          > If your browser blocks the download, choose **Keep** in the download list.
+
+          V VERSION, developed with AI assistance · [dmajorsound.com](https://dmajorsound.com)
+          NOTES
+          sed -i "s/VERSION/${TAG#v}/g" notes.txt
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Binocular ${TAG#v}" \
+            --notes-file notes.txt \
+            dl/Binocular_1.0_mac/Binocular_*_installer_mac.pkg dl/Binocular_1.0_windows/installer/win/Output/*.exe

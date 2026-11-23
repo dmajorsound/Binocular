@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Binocular – Correlation Meter</title>
+    <organization>com.dmajorsound</organization>
+    <background file="background.tiff" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background-darkAqua.tiff" alignment="bottomleft" scaling="none"/>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="default"/>
+    </choices-outline>
+    <choice id="default" title="Binocular VST3">
+        <pkg-ref id="com.dmajorsound.binocular.vst3"/>
+    </choice>
+    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.0" onConclusion="none">binocular-vst3.pkg</pkg-ref>
+</installer-gui-script>

@@ -5,9 +5,11 @@ as VST3 (macOS additionally AU). Audio and interface are those of the JSFX; the 
 
 ## Install on the Mac (no programming needed)
 
-Either download the finished build from GitHub, or build it yourself:
+**Installer:** on GitHub, open *Releases* and download `Binocular_1.0_installer_mac.pkg` (Mac) or
+`Binocular_1.0_installer_win64.exe` (Windows). Open it and click through; it installs the VST3 into the common VST3
+folder. Mac: the installer is not signed by Apple, so right-click it and choose *Open* the first time.
 
-**Download:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0_mac`. Unzip,
+**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0_mac`. Unzip,
 then copy `Binocular.vst3` into `~/Library/Audio/Plug-Ins/VST3/` and `Binocular.component` into
 `~/Library/Audio/Plug-Ins/Components/`. In REAPER: *Options → Preferences → Plug-ins → VST → Re-scan*.
 
