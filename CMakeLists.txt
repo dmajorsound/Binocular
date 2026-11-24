@@ -60,3 +60,12 @@ endif()
 target_link_libraries(Binocular PRIVATE
   juce::juce_audio_processors juce::juce_gui_basics
   PUBLIC juce::juce_recommended_config_flags)
+
+# CLAP (via clap-juce-extensions, fetched next to JUCE; skipped if missing)
+set(CLAP_JUCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../clap-juce-extensions" CACHE PATH "clap-juce-extensions checkout")
+if(EXISTS "${CLAP_JUCE_DIR}/CMakeLists.txt")
+  add_subdirectory(${CLAP_JUCE_DIR} clap-juce EXCLUDE_FROM_ALL)
+  clap_juce_extensions_plugin(TARGET Binocular
+    CLAP_ID "com.dmajorsound.binocular"
+    CLAP_FEATURES audio-effect analyzer stereo)
+endif()

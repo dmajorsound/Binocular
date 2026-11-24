@@ -14,7 +14,7 @@ OutputBaseFilename=Binocular_1.0.1_installer_win64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 Uninstallable=yes
-UninstallDisplayName=Binocular (VST3)
+UninstallDisplayName=Binocular
 UninstallFilesDir={commonappdata}\dmajorsound\Binocular
 WizardStyle=modern
 WizardImageFile=wizard-100.bmp,wizard-200.bmp
@@ -23,7 +23,16 @@ WizardImageStretch=no
 DisableWelcomePage=no
 
 [Files]
-Source: "..\..\build\Binocular_artefacts\Release\VST3\Binocular.vst3\*"; DestDir: "{app}\Binocular.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\build\Binocular_artefacts\Release\VST3\Binocular.vst3\*"; DestDir: "{app}\Binocular.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: vst3
+Source: "..\..\build\Binocular_artefacts\Release\CLAP\Binocular.clap"; DestDir: "{commoncf64}\CLAP"; Flags: ignoreversion; Components: clap
+
+[Types]
+Name: "full"; Description: "VST3 and CLAP"
+Name: "custom"; Description: "Choose formats"; Flags: iscustom
+
+[Components]
+Name: "vst3"; Description: "VST3 (REAPER, Cubase, Nuendo, Ableton Live, ...)"; Types: full custom
+Name: "clap"; Description: "CLAP (REAPER, Bitwig Studio, ...)"; Types: full custom
 
 [Messages]
-WelcomeLabel2=This installs the Binocular VST3 plug-in into the common VST3 folder.%n%nAfterwards, rescan your plug-ins in REAPER.
+WelcomeLabel2=This installs the Binocular plug-in as VST3 and CLAP into the common plug-in folders.%n%nAfterwards, rescan your plug-ins in REAPER.

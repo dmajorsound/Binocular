@@ -14,6 +14,7 @@ on:
         default: ""
 
 env:
+  CLAP_JUCE_COMMIT: 3837f4a6ed2ab0ba46aba69ae5b7041c7c64ce74   # clap-juce-extensions, tested with JUCE 9.0.6
   JUCE_COMMIT: 654bdbc7a9db0dae90849b44abe91f339e9f0768   # JUCE 9.0.6, the version Binocular was tested with
 
 jobs:
@@ -27,32 +28,50 @@ jobs:
           git -C ../juce remote add origin https://github.com/juce-framework/JUCE.git
           git -C ../juce fetch --depth 1 origin $JUCE_COMMIT
           git -C ../juce checkout FETCH_HEAD
+      - name: CLAP extensions
+        shell: bash
+        run: |
+          git init ../clap-juce-extensions
+          git -C ../clap-juce-extensions remote add origin https://github.com/free-audio/clap-juce-extensions.git
+          git -C ../clap-juce-extensions fetch --depth 1 origin $CLAP_JUCE_COMMIT
+          git -C ../clap-juce-extensions checkout FETCH_HEAD
+          git -C ../clap-juce-extensions submodule update --init --recursive --depth 1
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-          cmake --build build --config Release --target Binocular_VST3 Binocular_AU --parallel 4
+          cmake --build build --config Release --target Binocular_VST3 Binocular_AU Binocular_CLAP --parallel 4
       - name: Strip, sign (ad hoc) and pack
         run: |
           mkdir -p out
           cp -R build/Binocular_artefacts/Release/VST3/Binocular.vst3 out/
           cp -R build/Binocular_artefacts/Release/AU/Binocular.component out/
+          cp -R build/Binocular_artefacts/Release/CLAP/Binocular.clap out/
           # remove debug symbols (smaller file, same plugin)
           strip -x out/Binocular.vst3/Contents/MacOS/Binocular
           strip -x out/Binocular.component/Contents/MacOS/Binocular
+          strip -x out/Binocular.clap/Contents/MacOS/Binocular
           lipo -info out/Binocular.vst3/Contents/MacOS/Binocular
           du -sh out/Binocular.vst3 out/Binocular.component
           codesign --force --deep -s - out/Binocular.vst3
           codesign --force --deep -s - out/Binocular.component
+          codesign --force --deep -s - out/Binocular.clap
           ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0.1_mac_VST3.zip
           ditto -c -k --keepParent out/Binocular.component Binocular_1.0.1_mac_AU.zip
+          ditto -c -k --keepParent out/Binocular.clap Binocular_1.0.1_mac_CLAP.zip
       - name: Installer (.pkg)
         run: |
-          mkdir -p payload ui
-          cp -R out/Binocular.vst3 payload/
-          pkgbuild --analyze --root payload comp.plist
-          plutil -replace 0.BundleIsRelocatable -bool NO comp.plist
-          pkgbuild --root payload --component-plist comp.plist --install-location /Library/Audio/Plug-Ins/VST3 \
-            --identifier com.dmajorsound.binocular.vst3 --version 1.0.1 binocular-vst3.pkg
+          mkdir -p ui
+          # one component package per format, each fixed to its folder
+          mk() {  # bundle, folder, id
+            rm -rf payload && mkdir payload && cp -R "out/$1" payload/
+            pkgbuild --analyze --root payload comp.plist
+            plutil -replace 0.BundleIsRelocatable -bool NO comp.plist
+            pkgbuild --root payload --component-plist comp.plist --install-location "/Library/Audio/Plug-Ins/$2" \
+              --identifier "com.dmajorsound.binocular.$3" --version 1.0.1 "binocular-$3.pkg"
+          }
+          mk Binocular.vst3 VST3 vst3
+          mk Binocular.component Components au
+          mk Binocular.clap CLAP clap
           cp installer/mac_ui/welcome.html installer/mac_ui/logo.png installer/mac_ui/logo-dark.png ui/
           tiffutil -cathidpicheck installer/mac_ui/background.png installer/mac_ui/background@2x.png -out ui/background.tiff
           tiffutil -cathidpicheck installer/mac_ui/background-darkAqua.png installer/mac_ui/background-darkAqua@2x.png -out ui/background-darkAqua.tiff
@@ -66,6 +85,7 @@ jobs:
             Binocular_1.0.1_installer_mac.pkg
             Binocular_1.0.1_mac_VST3.zip
             Binocular_1.0.1_mac_AU.zip
+            Binocular_1.0.1_mac_CLAP.zip
 
   windows:
     runs-on: windows-latest
@@ -81,7 +101,7 @@ jobs:
       - name: Build
         run: |
           cmake -S . -B build -A x64
-          cmake --build build --config Release --target Binocular_VST3 --parallel 4
+          cmake --build build --config Release --target Binocular_VST3 Binocular_CLAP --parallel 4
       - name: Installer (.exe)
         shell: pwsh
         run: |
@@ -94,6 +114,7 @@ jobs:
           path: |
             installer/win/Output/Binocular_1.0.1_installer_win64.exe
             build/Binocular_artefacts/Release/VST3/Binocular.vst3
+            build/Binocular_artefacts/Release/CLAP/Binocular.clap
 
   # "Run workflow" with a version (e.g. v1.0) publishes the installers as a GitHub release
   release:
@@ -130,7 +151,7 @@ jobs:
 
           ### Install
           1. Quit REAPER.
-          2. Open the installer and click through. It puts Binocular.vst3 into the common VST3 folder.
+          2. Open the installer and click through. It installs VST3, CLAP and (Mac) Audio Unit into the common plug-in folders.
           3. Start REAPER. If Binocular does not show up: **Options → Preferences → Plug-ins → VST → Re-scan**.
 
           > [!CAUTION]
