@@ -41,7 +41,7 @@ BinocularEditor::BinocularEditor(BinocularProcessor& p)
     diagFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("binocular-debug.txt");
     if (!diagFile.existsAsFile()) diagFile = juce::File();
     else diagFile.appendText("\n--- Binocular editor opened " + juce::Time::getCurrentTime().toString(true, true) + "\n");
-    startTimerHz(30);
+    startTimerHz(60);   // 60 frames per second: smoother meters and goniometer
 }
 
 void BinocularEditor::diagTick() {

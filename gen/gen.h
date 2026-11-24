@@ -31,6 +31,7 @@ struct Gen : Runtime {
   double g_fn = 0;
   double g_fnb = 0;
   double g_fnb2 = 0;
+  double g_fofc = 0;
   double g_foffp = 0;
   double g_fpend = 0;
   double g_fs2 = 0;
@@ -154,6 +155,9 @@ struct Gen : Runtime {
   double g_uf = 0;
   double g_ufound = 0;
   double g_ufrz = 0;
+  double g_uft = 0;
+  double g_uftl = 0;
+  double g_uftn = 0;
   double g_ugain = 0;
   double g_ugbs = 0;
   double g_ugcx = 0;
@@ -218,6 +222,7 @@ struct Gen : Runtime {
   double g_uon = 0;
   double g_uosm = 0;
   double g_uox = 0;
+  double g_upass = 0;
   double g_upd = 0;
   double g_upr = 0;
   double g_upress = 0;

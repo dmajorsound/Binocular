@@ -1,7 +1,7 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.1
+//version: 1.0.2
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
 //  Up to 64 bands: a filter bank with no delay. 128 and 256 bands: an FFT cross-spectrum.
@@ -86,10 +86,10 @@ function setup() local(i, p, fc, w0, al, sp, wm, bw, xs, bo, e0, e1)
   nb = m_bl[max(0, min(9, floor(slider1+0.5)))];
   ffm = nb > 64;
   fn = srate <= 50000 ? 16384 : 32768;   // long: 2.9 Hz per bin at 48 and 96 kHz
-  fhop = fn/8;
+  fhop = fn/16;   // long spectrum ~47 times per second (smooth bars)
   fnb = fn/2;
   fs2 = fn/4;                            // short: 4096 at 48 kHz, about 85 ms
-  fhop2 = fs2/4;
+  fhop2 = fs2/8;  // short spectrum ~94 times per second
   fnb2 = fs2/2;
   flo = 20;
   fhi = min(20000, 0.45*srate);
@@ -542,7 +542,7 @@ mon ? (
   // the FFT work, spread over the blocks so no single block carries all of it:
   // short frame when due, then either the offset of the last long frame or a new long frame
   f2pend ? ( f2pend = 0; fframe2(); );
-  foffp ? ( foffp = 0; foffset(); ) : fpend ? ( fpend = 0; fframe(); foffp = 1; );
+  foffp ? ( foffp = 0; foffset(); ) : fpend ? ( fpend = 0; fframe(); foffp = (fofc += 1) & 1; );
   dt = samplesblock/srate;
   hm = slider5;
   i = 0;
@@ -655,6 +655,8 @@ udark ? (
 );
 
 usc = max(0.5, min(gfx_w/680, gfx_h/520));
+// frame time: fades and decays run per second, not per frame (same look at 30 or 60 frames per second)
+uftn = time_precise(); uft = max(0.25, min(3, (uftn - uftl)*30)); uftl = uftn;
 uox = floor((gfx_w - 680*usc)/2);
 uex = max(0, gfx_h/usc - 520);           // extra height goes to the display
 ulb = mouse_cap & 1;
@@ -907,17 +909,17 @@ uview ? (
     gfx_dest = 1; ucol(ucSTAGE, 1); gfx_rect(0, 0, ugs, ugs); gfx_dest = -1;
   );
   gfx_dest = 1;
-  !ufrz ? ( ucol(ucSTAGE, 0.3); gfx_rect(0, 0, ugs, ugs); );
+  !ufrz ? ( ucol(ucSTAGE, 1 - 0.7^uft); gfx_rect(0, 0, ugs, ugs); );
   // scale: drawn into the image every frame, under the trace, so a mono trace on the M axis stays visible
-  ugh2 = ugs/2;
+  ugh2 = floor(ugs/2);
   ucol(ucLINE, 1);
   gfx_line(ugh2 - ugr, ugh2, ugh2 + ugr, ugh2, 1);
   gfx_line(ugh2 - ugr*0.7071, ugh2 - ugr*0.7071, ugh2 + ugr*0.7071, ugh2 + ugr*0.7071, 1);
   gfx_line(ugh2 + ugr*0.7071, ugh2 - ugr*0.7071, ugh2 - ugr*0.7071, ugh2 + ugr*0.7071, 1);
   ucol(ucHAIR, 1); gfx_circle(ugh2, ugh2, ugr, 0, 1);
   gfx_line(ugh2, ugh2 - ugr, ugh2, ugh2 + ugr, 1);
-  // the samples since the last frame (at most 4096)
-  ugn = min(4096, (gwp - ugrp + 8192) & 8191);
+  // the samples since the last frame (at most 4096), starting at the last point of the previous frame (no gaps)
+  ugn = min(4096, (gwp - ugrp + 8192) & 8191) + 1;
   ugst = (gwp - ugn + 8192) & 8191;
   ugpk2 = 0;
   ui = 0;
@@ -927,17 +929,22 @@ uview ? (
     ui += 1;
   );
   // automatic gain: follows the loudest point, falls back slowly, at most +40 dB (quiet dialog still fills the circle)
-  ugpk = max(sqrt(ugpk2), ugpk*0.96);
+  ugpk = max(sqrt(ugpk2), ugpk*0.96^uft);
   ugain = min(100, 0.9/max(ugpk, 10^-9));
   uon && ugn > 1 ? (
     ucorr(bcor, 0.85);
-    ui = 0;
-    loop(ugn,
-      ugj = (ugst + ui) & 8191;
-      ugpx = max(0, min(ugs-1, ugs/2 + m_gx[ugj]*ugain*ugr));
-      ugpy = max(0, min(ugs-1, ugs/2 - m_gy[ugj]*ugain*ugr));
-      ui == 0 ? ( gfx_x = ugpx; gfx_y = ugpy; ) : gfx_lineto(ugpx, ugpy, 1);
-      ui += 1;
+    // on high-density screens the trace is drawn twice, 1 pixel apart, so it is not hair-thin
+    upass = 0;
+    loop(usc >= 1.5 ? 2 : 1,
+      ui = 0;
+      loop(ugn,
+        ugj = (ugst + ui) & 8191;
+        ugpx = max(0, min(ugs-2, floor(ugs/2) + m_gx[ugj]*ugain*ugr + upass));
+        ugpy = max(0, min(ugs-2, floor(ugs/2) - m_gy[ugj]*ugain*ugr));
+        ui == 0 ? ( gfx_x = ugpx; gfx_y = ugpy; ) : gfx_lineto(ugpx, ugpy, 1);
+        ui += 1;
+      );
+      upass += 1;
     );
   );
   ugrp = gwp;
@@ -1108,7 +1115,7 @@ gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plu
 // footer: bottom left, the same in every dmajorsound plugin
 ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc), 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.1 - developed with AI assistance");
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.2 - developed with AI assistance");
 // footer right: dmajorsound.com
 gfx_setfont(10); ucol(ucDIM, 1); uright("dmajorsound.com", uox+664*usc, (503+uex)*usc);
 
