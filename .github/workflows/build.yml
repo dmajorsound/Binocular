@@ -98,6 +98,14 @@ jobs:
           git -C ../juce remote add origin https://github.com/juce-framework/JUCE.git
           git -C ../juce fetch --depth 1 origin $JUCE_COMMIT
           git -C ../juce checkout FETCH_HEAD
+      - name: CLAP extensions
+        shell: bash
+        run: |
+          git init ../clap-juce-extensions
+          git -C ../clap-juce-extensions remote add origin https://github.com/free-audio/clap-juce-extensions.git
+          git -C ../clap-juce-extensions fetch --depth 1 origin $CLAP_JUCE_COMMIT
+          git -C ../clap-juce-extensions checkout FETCH_HEAD
+          git -C ../clap-juce-extensions submodule update --init --recursive --depth 1
       - name: Build
         run: |
           cmake -S . -B build -A x64
