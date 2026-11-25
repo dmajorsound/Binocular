@@ -1,13 +1,12 @@
 # Builds Binocular on GitHub's own Macs and PCs: macOS VST3 + AU (Universal: Apple Silicon and Intel, ad-hoc signed),
 # Windows VST3, plus installers (Mac .pkg, Windows .exe). The results are under "Actions" -> the run -> "Artifacts".
 # "Run workflow" with a version (e.g. v1.0) also publishes the installers as a GitHub release.
-# Pushing a version tag (git tag v1.0.4 && git push origin v1.0.4) does the same.
+# A push to main that raises the version in CMakeLists.txt publishes it too (once per version).
 name: Build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       release:
@@ -128,19 +127,34 @@ jobs:
 
   # "Run workflow" with a version (e.g. v1.0) publishes the installers as a GitHub release
   release:
-    if: (github.event_name == 'workflow_dispatch' && inputs.release != '') || startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'workflow_dispatch' && inputs.release != '') || github.event_name == 'push'
     needs: [mac, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Which version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.release }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # push to main: the version from CMakeLists.txt, only if there is no release for it yet
+          v=$(sed -n 's/^project(Binocular VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ -n "$v" ] && ! gh release view "v$v" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
+        if: steps.ver.outputs.tag != ''
         with:
           path: dl
       - name: Publish release
+        if: steps.ver.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release || github.ref_name }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
           cat > notes.txt <<'NOTES'
           <p align="center">
