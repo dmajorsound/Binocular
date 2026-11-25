@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "UpdateCheck.h"
 
 BinocularEditor::BinocularEditor(BinocularProcessor& p)
     : AudioProcessorEditor(&p), proc(p), gfx(*p.engine.gen) {
@@ -41,6 +42,7 @@ BinocularEditor::BinocularEditor(BinocularProcessor& p)
     diagFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("binocular-debug.txt");
     if (!diagFile.existsAsFile()) diagFile = juce::File();
     else diagFile.appendText("\n--- Binocular editor opened " + juce::Time::getCurrentTime().toString(true, true) + "\n");
+    bn::updateCheckStart();   // once per host session, in the background
     startTimerHz(60);   // 60 frames per second: smoother meters and goniometer
 }
 
@@ -76,6 +78,8 @@ void BinocularEditor::timerCallback() {
     auto* g = proc.engine.gen.get();
     if (g->v_gfx_ext_retina > 0) g->v_gfx_ext_retina = s;
     g->v_mouse_cap = liveCap | latchedButtons;   // a press seen since the last frame counts for this frame
+    g->g_updv = bn::updateNewerVersion();          // "Update x.y.z" in the footer once GitHub has a newer release
+    if (g->g_updclick != 0) { g->g_updclick = 0; bn::openWebPage(bn::updateUrl()); }
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     gfx.beginFrame(w, h);
     proc.engine.runGfx(&gfx, w, h);

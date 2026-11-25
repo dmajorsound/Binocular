@@ -55,9 +55,9 @@ jobs:
           codesign --force --deep -s - out/Binocular.vst3
           codesign --force --deep -s - out/Binocular.component
           codesign --force --deep -s - out/Binocular.clap
-          ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0.3_mac_VST3.zip
-          ditto -c -k --keepParent out/Binocular.component Binocular_1.0.3_mac_AU.zip
-          ditto -c -k --keepParent out/Binocular.clap Binocular_1.0.3_mac_CLAP.zip
+          ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0.4_mac_VST3.zip
+          ditto -c -k --keepParent out/Binocular.component Binocular_1.0.4_mac_AU.zip
+          ditto -c -k --keepParent out/Binocular.clap Binocular_1.0.4_mac_CLAP.zip
       - name: Installer (.pkg)
         run: |
           mkdir -p ui
@@ -67,7 +67,7 @@ jobs:
             pkgbuild --analyze --root payload comp.plist
             plutil -replace 0.BundleIsRelocatable -bool NO comp.plist
             pkgbuild --root payload --component-plist comp.plist --install-location "/Library/Audio/Plug-Ins/$2" \
-              --identifier "com.dmajorsound.binocular.$3" --version 1.0.3 "binocular-$3.pkg"
+              --identifier "com.dmajorsound.binocular.$3" --version 1.0.4 "binocular-$3.pkg"
           }
           mk Binocular.vst3 VST3 vst3
           mk Binocular.component Components au
@@ -76,16 +76,16 @@ jobs:
           tiffutil -cathidpicheck installer/mac_ui/background.png installer/mac_ui/background@2x.png -out ui/background.tiff
           tiffutil -cathidpicheck installer/mac_ui/background-darkAqua.png installer/mac_ui/background-darkAqua@2x.png -out ui/background-darkAqua.tiff
           productbuild --distribution installer/mac_ui/distribution.xml --resources ui \
-            --package-path . Binocular_1.0.3_installer_mac.pkg
-          ls -la Binocular_1.0.3_installer_mac.pkg
+            --package-path . Binocular_1.0.4_installer_mac.pkg
+          ls -la Binocular_1.0.4_installer_mac.pkg
       - uses: actions/upload-artifact@v4
         with:
-          name: Binocular_1.0.3_mac
+          name: Binocular_1.0.4_mac
           path: |
-            Binocular_1.0.3_installer_mac.pkg
-            Binocular_1.0.3_mac_VST3.zip
-            Binocular_1.0.3_mac_AU.zip
-            Binocular_1.0.3_mac_CLAP.zip
+            Binocular_1.0.4_installer_mac.pkg
+            Binocular_1.0.4_mac_VST3.zip
+            Binocular_1.0.4_mac_AU.zip
+            Binocular_1.0.4_mac_CLAP.zip
 
   windows:
     runs-on: windows-latest
@@ -118,9 +118,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: Binocular_1.0.3_windows
+          name: Binocular_1.0.4_windows
           path: |
-            installer/win/Output/Binocular_1.0.3_installer_win64.exe
+            installer/win/Output/Binocular_1.0.4_installer_win64.exe
             build/Binocular_artefacts/Release/VST3/Binocular.vst3
             build/Binocular_artefacts/Release/CLAP/Binocular.clap
 
@@ -185,4 +185,4 @@ jobs:
           sed -i "s/VERSION/${TAG#v}/g" notes.txt
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Binocular ${TAG#v}" \
             --notes-file notes.txt \
-            dl/Binocular_1.0.3_mac/Binocular_*_installer_mac.pkg dl/Binocular_1.0.3_windows/installer/win/Output/*.exe
+            dl/Binocular_1.0.4_mac/Binocular_*_installer_mac.pkg dl/Binocular_1.0.4_windows/installer/win/Output/*.exe

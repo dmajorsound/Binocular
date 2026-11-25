@@ -227,6 +227,8 @@ struct Gen : Runtime {
   double g_uox = 0;
   double g_upass = 0;
   double g_upd = 0;
+  double g_updclick = 0;
+  double g_updv = 0;
   double g_upr = 0;
   double g_upress = 0;
   double g_upt = 0;
@@ -257,6 +259,9 @@ struct Gen : Runtime {
   double g_utx = 0;
   double g_uty = 0;
   double g_uty2 = 0;
+  double g_uuph = 0;
+  double g_uupw = 0;
+  double g_uupx = 0;
   double g_uv = 0;
   double g_uvh = 0;
   double g_uview = 0;
