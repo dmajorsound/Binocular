@@ -262,6 +262,7 @@ struct Gen : Runtime {
   double g_uuph = 0;
   double g_uupw = 0;
   double g_uupx = 0;
+  double g_uupy = 0;
   double g_uv = 0;
   double g_uvh = 0;
   double g_uview = 0;

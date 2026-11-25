@@ -1,7 +1,7 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.4
+//version: 1.0.5
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
 //  Up to 64 bands: a filter bank with no delay. 128 and 256 bands: an FFT cross-spectrum.
@@ -1112,17 +1112,19 @@ gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plu
 // footer: bottom left, the same in every dmajorsound plugin
 ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc), 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.4 - developed with AI assistance");
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.5 - developed with AI assistance");
 // newer version on GitHub (as in OLAAF): the VST3 / AU / CLAP version asks GitHub once per session and sets updv
 // (major*10000 + minor*100 + patch); in REAPER's JSFX it stays 0 and nothing is shown
 updv > 0 ? (
-  sprintf(#uupd, "Update %d.%d.%d", floor(updv/10000), floor(updv/100)%100, updv%100);
+  // as in OLAAF: a blinking light red dot and "1.0.5 is out" right after the version
+  sprintf(#uupd, "%d.%d.%d is out", floor(updv/10000), floor(updv/100)%100, updv%100);
   gfx_measurestr(#uupd, uupw, uuph);
-  uupx = floor(gfx_x + 12*usc); uupw = floor(uupw + 16*usc); uuph = floor(16*usc);
-  uin(uupx, floor((501+uex)*usc), uupw, uuph) ? uhov = 40;
-  ucol(uhov == 40 ? ucACTO : ucSURF, uhov == 40 ? 0.25 : 1); urr(uupx, floor((501+uex)*usc), uupw, uuph, 8*usc, 1);
-  ucol(ucACTO, 1); urr(uupx, floor((501+uex)*usc), uupw, uuph, 8*usc, 0);
-  gfx_x = uupx + 8*usc; gfx_y = (503+uex)*usc; gfx_drawstr(#uupd);
+  uupx = floor(gfx_x + 8*usc); uupy = floor((503+uex)*usc + uuph/2 - 3.5*usc);
+  uin(uupx - 4*usc, floor((501+uex)*usc), uupw + 19*usc, floor(18*usc)) ? uhov = 40;
+  ucol(0xF06E6E, 1);
+  gfx_circle(uupx + 3.5*usc, uupy + 3.5*usc, 3.5*usc, floor(time_precise()/0.7) % 2 == 0, 1);   // blinks every 0.7 s
+  ucol(slider7 ? 0xC8423B : 0xFF7A6E, 1);
+  gfx_x = uupx + floor(11*usc); gfx_y = (503+uex)*usc; gfx_drawstr(#uupd);
 );
 // footer right: the dmajorsound mark in the corner, dmajorsound.com to its left (the same in every dmajorsound plugin)
 gfx_setfont(10); gfx_measurestr("dmajorsound.com", uftw, ufth);
@@ -1141,7 +1143,7 @@ uhov == 10 ? gfx_drawstr(ufrz ? "Off: the meter shows its last picture. Click to
 uhov == 11 ? gfx_drawstr("Stereo: compares left and right of this track.") :
 uhov == 12 ? gfx_drawstr("Sidechain: compares this track (inputs 1/2) with inputs 3/4, e.g. boom vs. lav.") :
 uhov == 13 ? gfx_drawstr(udark ? "Dark mode. Click for light." : "Light mode. Click for dark.") :
-uhov == 40 ? gfx_drawstr("A newer Binocular is on GitHub. Click to open the download page.") :
+uhov == 40 ? ( sprintf(#uupt, "Binocular %d.%d.%d is out. Click to open the download page.", floor(updv/10000), floor(updv/100)%100, updv%100); gfx_drawstr(#uupt); ) :
 uhov == 14 ? gfx_drawstr("Reset plugin: every setting back to its default, holds and reference cleared.") :
 uhov == 30 ? gfx_drawstr("Correlation: +1 in phase, 0 unrelated, -1 out of phase.") :
 uhov == 31 ? gfx_drawstr("Mono loss: how many dB each band drops when the two sides are summed to mono.") :
