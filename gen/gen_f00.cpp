@@ -68,7 +68,7 @@ double Gen::F_ucorr(double p0, double p1) {
 
 double Gen::F_udef(double p0) {
   L_udef_id = p0;
-  return (EQ(L_udef_id, 1.0) ? (double)((void)((sl[1] = 8.0)), slider_automate_mask({1.0})) : (double)(EQ(L_udef_id, 2.0) ? (double)((void)((sl[2] = 50.0)), slider_automate_mask({2.0})) : (double)((void)((sl[3] = 300.0)), slider_automate_mask({4.0}))));
+  return (EQ(L_udef_id, 1.0) ? (double)((void)((sl[1] = 7.0)), slider_automate_mask({1.0})) : (double)(EQ(L_udef_id, 2.0) ? (double)((void)((sl[2] = 50.0)), slider_automate_mask({2.0})) : (double)((void)((sl[3] = 300.0)), slider_automate_mask({4.0}))));
 }
 
 double Gen::F_ufrac(double p0) {

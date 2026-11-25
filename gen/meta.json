@@ -3,7 +3,7 @@
  "sliders": [
   {
    "idx": 1,
-   "default": 8.0,
+   "default": 7.0,
    "lo": 0.0,
    "hi": 9.0,
    "step": 1.0,

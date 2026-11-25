@@ -153,11 +153,14 @@ struct Gen : Runtime {
   double g_udy = 0;
   double g_uex = 0;
   double g_uf = 0;
+  double g_ufcy = 0;
   double g_ufound = 0;
   double g_ufrz = 0;
   double g_uft = 0;
+  double g_ufth = 0;
   double g_uftl = 0;
   double g_uftn = 0;
+  double g_uftw = 0;
   double g_ugain = 0;
   double g_ugbs = 0;
   double g_ugcx = 0;
@@ -251,8 +254,6 @@ struct Gen : Runtime {
   double g_usel = 0;
   double g_uth = 0;
   double g_utr = 0;
-  double g_utth = 0;
-  double g_uttw = 0;
   double g_utx = 0;
   double g_uty = 0;
   double g_uty2 = 0;

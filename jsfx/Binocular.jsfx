@@ -1,14 +1,14 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.2
+//version: 1.0.3
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
 //  Up to 64 bands: a filter bank with no delay. 128 and 256 bands: an FFT cross-spectrum.
 //  Also shows how much each band loses in mono, and the time offset and polarity between the sides.
 //  The audio passes through untouched, with no latency.
 
-slider1:8<0,9,1{4,8,12,16,24,32,48,64,128,256}>-Bands
+slider1:7<0,9,1{4,8,12,16,24,32,48,64,128,256}>-Bands
 slider2:50<0,100,0.1>-Selectivity (%)
 slider3:300<10,5000,1>-Averaging (ms)
 slider4:0<0,1,1{Stereo,Sidechain}>-Input
@@ -362,7 +362,7 @@ function uset(id, f)
 
 function udef(id)
 (
-  id == 1 ? ( slider1 = 8; slider_automate(1); ) :
+  id == 1 ? ( slider1 = 7; slider_automate(1); ) :
   id == 2 ? ( slider2 = 50; slider_automate(2); ) :
             ( slider3 = 300; slider_automate(4); );
 );
@@ -701,9 +701,6 @@ ucol(ucGRN, 0.18); gfx_circle(ubn2, ubcy, ubr, 1, 1);
 ucol(ucACTO, 1); uarc(ubn1, ubcy, ubr, 0, 6.2832, 1.8*usc);
 ucol(ucGRN, 1); uarc(ubn2, ubcy, ubr, 0, 6.2832, 1.8*usc);
 ucol(ucTEXT, 1); gfx_x = uox+84*usc; gfx_y = 18*usc; gfx_drawstr("Binocular");
-// the dmajorsound mark, as in Alfred: right after the title, raised like an exponent
-gfx_measurestr("Binocular", uttw, utth);
-ucol(ucMUTED, 1); ulogo(uox+84*usc + uttw + 3*usc + (usc >= 1.5 ? lgw2 : lgw1), 24*usc);
 gfx_setfont(1);
 gfx_setfont(9); ucol(ucMUTED, 1); gfx_x = uox+85*usc; gfx_y = 37*usc; gfx_drawstr("Mmm… coherent.");
 
@@ -794,15 +791,15 @@ loop(5,
 // frequency grid
 ulfr = log(fhi/flo);
 uk = 0;
-loop(9,
-  uf = uk == 0 ? 50 : uk == 1 ? 100 : uk == 2 ? 200 : uk == 3 ? 500 : uk == 4 ? 1000 :
-       uk == 5 ? 2000 : uk == 6 ? 5000 : uk == 7 ? 10000 : 20000;
+loop(11,   // the full range from 20 Hz
+  uf = uk == 0 ? 20 : uk == 1 ? 30 : uk == 2 ? 50 : uk == 3 ? 100 : uk == 4 ? 200 : uk == 5 ? 500 : uk == 6 ? 1000 :
+       uk == 7 ? 2000 : uk == 8 ? 5000 : uk == 9 ? 10000 : 20000;
   uf <= fhi*1.001 ? (
     uxx = floor(ugx + ugw*log(uf/flo)/ulfr);
     ucol(ucLINE, 0.6); gfx_rect(uxx, ugy+1, 1, ugh-2);
     uf < 1000 ? sprintf(#ulab, "%d", uf) : sprintf(#ulab, "%dk", uf/1000);
     gfx_measurestr(#ulab, ultw, ulth);
-    ucol(ucDIM, 1); gfx_x = floor(min(uxx - ultw/2, ugx + ugw - ultw)); gfx_y = ugy+ugh+3*usc; gfx_drawstr(#ulab);
+    ucol(ucDIM, 1); gfx_x = floor(max(ugx, min(uxx - ultw/2, ugx + ugw - ultw))); gfx_y = ugy+ugh+3*usc; gfx_drawstr(#ulab);
   );
   uk += 1;
 );
@@ -1115,9 +1112,12 @@ gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plu
 // footer: bottom left, the same in every dmajorsound plugin
 ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc), 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.2 - developed with AI assistance");
-// footer right: dmajorsound.com
-gfx_setfont(10); ucol(ucDIM, 1); uright("dmajorsound.com", uox+664*usc, (503+uex)*usc);
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.3 - developed with AI assistance");
+// footer right: the dmajorsound mark in the corner, dmajorsound.com to its left (the same in every dmajorsound plugin)
+gfx_setfont(10); gfx_measurestr("dmajorsound.com", uftw, ufth);
+ufcy = floor((503+uex)*usc + ufth/2);
+ucol(ucMUTED, 1); ulogo(floor(uox+656*usc), ufcy); gfx_a = 1;   // 8 units clear of the window resize corner
+ucol(ucDIM, 1); uright("dmajorsound.com", floor(uox+656*usc - (usc >= 1.5 ? lgw2 : lgw1) - 8*usc), floor(ufcy - ufth/2));
 
 gfx_setfont(2); ucol(ucMUTED, 1);
 gfx_x = uox+16*usc; gfx_y = (482+uex)*usc;
@@ -1186,7 +1186,7 @@ upress ? (
   ) : uhov == 13 ? (
     slider7 = udark ? 1 : 0; slider_automate(64);
   ) : uhov == 14 ? (
-    slider1 = 8; slider2 = 50; slider3 = 300; slider4 = 0; slider5 = 1; slider6 = 0; slider9 = 1;
+    slider1 = 7; slider2 = 50; slider3 = 300; slider4 = 0; slider5 = 1; slider6 = 0; slider9 = 1;
     slider_automate(1|2|4|8|16|32|256); req_clr = 1; refon = 0;
   ) : (uhov == 20 || uhov == 21) ? (
     req_clr = 1;
