@@ -45,7 +45,13 @@ def draw(s):                       # s = 1 or 2 (Retina)
             d.text((u(52), u(y + i * 20)), t, font=stf, fill=TEXT, anchor="lm")
     d.text((u(24), u(394)), f"Quit {DAW} first. The installer is free and not signed by Apple, so macOS asks once.",
            font=f("Regular", 10.5), fill=GREY, anchor="lm")
-    return im.resize((640 * s, 420 * s), Image.LANCZOS)
+    im = im.resize((640 * s, 420 * s), Image.LANCZOS)
+    # the dmajorsound logo top right: 36 high, right edge at 616, top at 16 (doubled on Retina)
+    logo = Image.open(os.path.join(out, "..", "mac_ui", "logo.png")).convert("RGBA")
+    lh = 36 * s; lw = round(logo.width * lh / logo.height)
+    logo = logo.resize((lw, lh), Image.LANCZOS)
+    im.paste(logo, (616 * s - lw, 16 * s), logo)
+    return im
 
 draw(1).save(os.path.join(out, "background.png"), optimize=True)
 draw(2).save(os.path.join(out, "background@2x.png"), optimize=True)

@@ -1,7 +1,7 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.7
+//version: 1.0.8
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
 //  All band counts: an FFT cross-spectrum (the old filter bank cost up to 3x the CPU).
@@ -1114,7 +1114,7 @@ gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plu
 // footer: bottom left, the same in every dmajorsound plugin
 ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc) + uwp, 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.7 - developed with AI assistance");
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.8 - developed with AI assistance");
 // newer version on GitHub (as in OLAAF): the VST3 / AU / CLAP version asks GitHub once per session and sets updv
 // (major*10000 + minor*100 + patch); in REAPER's JSFX it stays 0 and nothing is shown
 updv > 0 ? (

@@ -111,7 +111,7 @@ void Gen::initStrings() {
   setLiteral(10106, "3 s");
   setLiteral(10107, "Infinite");
   setLiteral(10108, "Reset plugin");
-  setLiteral(10109, "V 1.0.7 - developed with AI assistance");
+  setLiteral(10109, "V 1.0.8 - developed with AI assistance");
   setLiteral(10110, "%d.%d.%d is out");
   setLiteral(10111, "dmajorsound.com");
   setLiteral(10112, "Selectivity (Alt-drag): higher makes each band narrower and sharper, lower blends neighbors.");

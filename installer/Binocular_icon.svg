@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Binocular</title>
+  <rect x="0" y="0" width="1024" height="1024" rx="230.4" ry="230.4" fill="#202125"/>
+  <circle cx="409.6" cy="512" r="175.1" fill="none" stroke="#7FBEFF" stroke-width="69.6"/>
+  <circle cx="614.4" cy="512" r="175.1" fill="none" stroke="#34C759" stroke-width="69.6"/>
+</svg>

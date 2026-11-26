@@ -12,16 +12,16 @@
         <line choice="au"/>
         <line choice="clap"/>
     </choices-outline>
-    <choice id="vst3" title="VST3" description="For REAPER, Cubase, Nuendo, Ableton Live and most other DAWs.">
+    <choice id="vst3" title="VST3" description="Binocular as VST3 plug-in, for Nuendo, REAPER and most other DAWs. Goes to /Library/Audio/Plug-Ins/VST3.">
         <pkg-ref id="com.dmajorsound.binocular.vst3"/>
     </choice>
-    <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and other AU hosts.">
+    <choice id="au" title="Audio Unit (AU)" description="Binocular as Audio Unit, for Logic Pro, GarageBand and other hosts that use Audio Units. Goes to /Library/Audio/Plug-Ins/Components.">
         <pkg-ref id="com.dmajorsound.binocular.au"/>
     </choice>
-    <choice id="clap" title="CLAP" description="For REAPER, Bitwig Studio and other CLAP hosts.">
+    <choice id="clap" title="CLAP" description="Binocular as CLAP plug-in, for REAPER, Bitwig Studio and other DAWs that support CLAP. Goes to /Library/Audio/Plug-Ins/CLAP.">
         <pkg-ref id="com.dmajorsound.binocular.clap"/>
     </choice>
-    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.0.7" onConclusion="none">binocular-vst3.pkg</pkg-ref>
-    <pkg-ref id="com.dmajorsound.binocular.au" version="1.0.7" onConclusion="none">binocular-au.pkg</pkg-ref>
-    <pkg-ref id="com.dmajorsound.binocular.clap" version="1.0.7" onConclusion="none">binocular-clap.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.0.8" onConclusion="none">binocular-vst3.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.au" version="1.0.8" onConclusion="none">binocular-au.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.clap" version="1.0.8" onConclusion="none">binocular-clap.pkg</pkg-ref>
 </installer-gui-script>
