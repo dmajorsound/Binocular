@@ -2,14 +2,14 @@
 [Setup]
 AppId=Binocular_Uninstaller
 AppName=Binocular Uninstaller
-AppVersion=1.0.8
+AppVersion=1.0.9
 AppPublisher=dmajorsound
 AppPublisherURL=https://dmajorsound.com
 CreateAppDir=no
 DisableProgramGroupPage=yes
 DisableReadyPage=no
 PrivilegesRequired=admin
-OutputBaseFilename=Binocular_1.0.8_uninstaller_win64
+OutputBaseFilename=Binocular_1.0.9_uninstaller_win64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 Uninstallable=no

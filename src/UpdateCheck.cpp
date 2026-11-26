@@ -83,7 +83,7 @@ std::string updateUrl() {
 }
 
 void openWebPage(const std::string& url) {
-    if (url.compare(0, 19, "https://github.com/") != 0) return;
+    if (url.compare(0, 19, "https://github.com/") != 0 && url.compare(0, 24, "https://dmajorsound.com/") != 0) return;
     for (char ch : url)
         if (ch <= ' ' || ch == '"' || ch == '\'' || ch == '`') return;
     juce::URL(juce::String(url)).launchInDefaultBrowser();

@@ -11,7 +11,7 @@ void updateCheckStart();
 int updateNewerVersion();
 // the GitHub page of that release
 std::string updateUrl();
-// opens a github.com page in the browser
+// opens a github.com or dmajorsound.com page in the browser
 void openWebPage(const std::string& url);
 
 } // namespace bn

@@ -81,6 +81,7 @@ void BinocularEditor::timerCallback() {
     g->v_mouse_cap = liveCap | latchedButtons;   // a press seen since the last frame counts for this frame
     g->g_updv = bn::updateNewerVersion();          // "Update x.y.z" in the footer once GitHub has a newer release
     if (g->g_updclick != 0) { g->g_updclick = 0; bn::openWebPage(bn::updateUrl()); }
+    if (g->g_umanual != 0) { g->g_umanual = 0; bn::openWebPage("https://dmajorsound.com/software/binocular/manual.html"); }
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     gfx.beginFrame(w, h);
     proc.engine.runGfx(&gfx, w, h);

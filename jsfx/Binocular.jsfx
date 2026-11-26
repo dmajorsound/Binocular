@@ -1,7 +1,7 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.8
+//version: 1.0.9
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
 //  All band counts: an FFT cross-spectrum (the old filter bank cost up to 3x the CPU).
@@ -727,8 +727,8 @@ umode == 1 ? gfx_rect(uvx2+ubb, floor(50*usc), uvw2-2*ubb, 1) :
              gfx_rect(uvx3+ubb, floor(50*usc), uvw3-2*ubb, 1);
 
 // input: two round buttons, Stereo (L vs R) or Sidechain (this track vs inputs 3/4)
-ubx1 = floor(uox+520*usc) + uwp; ubw1 = floor(46*usc);
-ubx2 = floor(uox+570*usc) + uwp; ubw2 = floor(60*usc);
+ubx1 = floor(uox+494*usc) + uwp; ubw1 = floor(46*usc);
+ubx2 = floor(uox+544*usc) + uwp; ubw2 = floor(60*usc);
 uby = floor(24*usc); ubh = floor(18*usc);
 uin(ubx1, uby, ubw1, ubh) ? uhov = 11;
 uin(ubx2, uby, ubw2, ubh) ? uhov = 12;
@@ -742,6 +742,13 @@ loop(2,
   ucol(ukon ? ucACTX : (ukhot ? ucTEXT : ucMUTED), 1); utext(uk == 0 ? "Stereo" : "Sidechain", ukx + ukw/2, uby + 3*usc);
   uk += 1;
 );
+
+// help: a round "?" left of the theme icon, opens the help panel over the display
+uqx = floor(uox+627*usc) + uwp; uqy = floor(33*usc);
+uinc(uqx, uqy, 12*usc) ? uhov = 41;
+ucol(uhelp ? ucACT : (uhov == 41 ? ucHAIR : ucSURF), 1); gfx_circle(uqx, uqy, 9*usc, 1, 1);
+ucol(uhelp ? ucACTO : ucBORD, 1); gfx_circle(uqx, uqy, 9*usc, 0, 1);
+gfx_setfont(6); ucol(uhelp ? ucACTX : (uhov == 41 ? ucTEXT : ucMUTED), 1); utext("?", uqx + 0.5*usc, uqy - 6*usc);
 
 // theme, top right corner: shows the mode it is in. Dark = a crescent moon, light = a sun, both drawn in outlines.
 utx = floor(uox+655*usc) + uwp; uty = floor(33*usc); utr = 9*usc;
@@ -1111,10 +1118,39 @@ gfx_triangle(uax + cos(ua0)*3.5*usc, uay + sin(ua0)*3.5*usc,
 gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plugin");
 
 // ---- status line, bottom left, above the footer line: explains whatever is under the mouse
+// ---- help panel: over the display, a short guide and "Read Manual" (opens the manual on dmajorsound.com)
+uhelp && gfx_getchar(27) ? uhelp = 0;   // Esc closes it
+uhelp ? (
+  uhpw = floor(min(560*usc, ugw - 24*usc)); uhph = floor(min(250*usc, ugh - 16*usc));
+  uhpx = floor(ugx + (ugw - uhpw)/2); uhpy = floor(ugy + (ugh - uhph)/2);
+  uin(uhpx, uhpy, uhpw, uhph) ? uhov = 43;
+  ucol(ucBG, 1); urr(uhpx, uhpy, uhpw, uhph, 10*usc, 1);
+  ucol(ucBORD, 1); urr(uhpx, uhpy, uhpw, uhph, 10*usc, 0);
+  gfx_setfont(5); ucol(ucTEXT, 1); gfx_x = uhpx + 20*usc; gfx_y = uhpy + 16*usc; gfx_drawstr("Binocular - Help");
+  // close (x), top right of the panel
+  uin(uhpx + uhpw - 34*usc, uhpy + 8*usc, 26*usc, 26*usc) ? uhov = 44;
+  ucol(uhov == 44 ? ucTEXT : ucMUTED, 1);
+  gfx_line(uhpx + uhpw - 27*usc, uhpy + 15*usc, uhpx + uhpw - 15*usc, uhpy + 27*usc, 1);
+  gfx_line(uhpx + uhpw - 15*usc, uhpy + 15*usc, uhpx + uhpw - 27*usc, uhpy + 27*usc, 1);
+  gfx_setfont(2); uhl = uhpy + 48*usc;
+  ucol(ucTEXT, 1); gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("Correlation: how left and right relate in each band. +1 in phase, 0 unrelated,"); uhl += 17*usc;
+  gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("-1 out of phase. Green and blue hold up in mono, red loses level."); uhl += 24*usc;
+  gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("Mono loss: how many dB each band drops when the sides are summed to mono."); uhl += 24*usc;
+  gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("Goniometer: the stereo image as a trace, the correlation of the full signal below."); uhl += 24*usc;
+  gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("Stereo compares left and right. Sidechain compares this track with inputs 3/4."); uhl += 24*usc;
+  ucol(ucMUTED, 1); gfx_x = uhpx + 20*usc; gfx_y = uhl; gfx_drawstr("Move the mouse over any control: its explanation shows at the bottom left.");
+  // Read Manual
+  umbw = floor(120*usc); umbh = floor(24*usc); umbx = floor(uhpx + uhpw - umbw - 20*usc); umby = floor(uhpy + uhph - umbh - 16*usc);
+  uin(umbx, umby, umbw, umbh) ? uhov = 42;
+  ucol(uhov == 42 ? ucACTO : ucACT, 1); urr(umbx, umby, umbw, umbh, umbh/2, 1);
+  ucol(ucACTO, 1); urr(umbx, umby, umbw, umbh, umbh/2, 0);
+  gfx_setfont(6); ucol(ucACTX, 1); utext("Read Manual", umbx + umbw/2, umby + 6*usc);
+);
+
 // footer: bottom left, the same in every dmajorsound plugin
 ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc) + uwp, 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.8 - developed with AI assistance");
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.9 - developed with AI assistance");
 // newer version on GitHub (as in OLAAF): the VST3 / AU / CLAP version asks GitHub once per session and sets updv
 // (major*10000 + minor*100 + patch); in REAPER's JSFX it stays 0 and nothing is shown
 updv > 0 ? (
@@ -1144,6 +1180,10 @@ uhov == 10 ? gfx_drawstr(ufrz ? "Off: the meter shows its last picture. Click to
 uhov == 11 ? gfx_drawstr("Stereo: compares left and right of this track.") :
 uhov == 12 ? gfx_drawstr("Sidechain: compares this track (inputs 1/2) with inputs 3/4, e.g. boom vs. lav.") :
 uhov == 13 ? gfx_drawstr(udark ? "Dark mode. Click for light." : "Light mode. Click for dark.") :
+uhov == 41 ? gfx_drawstr(uhelp ? "Help: click to close it." : "Help: a short guide and the manual.") :
+uhov == 42 ? gfx_drawstr("Read Manual: opens the Binocular manual on dmajorsound.com in your browser.") :
+uhov == 43 ? gfx_drawstr("Esc or the x closes the help.") :
+uhov == 44 ? gfx_drawstr("Close the help.") :
 uhov == 40 ? ( sprintf(#uupt, "Binocular %d.%d.%d is out. Click to open the download page.", floor(updv/10000), floor(updv/100)%100, updv%100); gfx_drawstr(#uupt); ) :
 uhov == 14 ? gfx_drawstr("Reset plugin: every setting back to its default, holds and reference cleared.") :
 uhov == 30 ? gfx_drawstr("Correlation: +1 in phase, 0 unrelated, -1 out of phase.") :
@@ -1192,6 +1232,14 @@ upress ? (
   ) : uhov == 4 ? (
     (mouse_cap & 8) ? ( slider5 = slider5 >= 1.5 ? 1 : 2; ) : ( slider5 = slider5 >= 0.5 ? 0 : 1; );
     slider_automate(16); req_clr = 1;
+  ) : uhov == 41 ? (
+    uhelp = !uhelp;
+  ) : uhov == 42 ? (
+    umanual = 1;    // the plugin opens the manual in the browser
+  ) : uhov == 44 ? (
+    uhelp = 0;
+  ) : uhov == 43 ? (
+    0;              // a click inside the help panel does nothing below it
   ) : uhov == 40 ? (
     updclick = 1;   // the plugin opens the GitHub release page
   ) : uhov == 10 ? (

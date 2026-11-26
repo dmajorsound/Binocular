@@ -184,8 +184,14 @@ struct Gen : Runtime {
   double g_ugx = 0;
   double g_ugy = 0;
   double g_uhb = 0;
+  double g_uhelp = 0;
+  double g_uhl = 0;
   double g_uhm = 0;
   double g_uhov = 0;
+  double g_uhph = 0;
+  double g_uhpw = 0;
+  double g_uhpx = 0;
+  double g_uhpy = 0;
   double g_uhw = 0;
   double g_uhx = 0;
   double g_ui = 0;
@@ -209,6 +215,11 @@ struct Gen : Runtime {
   double g_ultw = 0;
   double g_ulx = 0;
   double g_uly = 0;
+  double g_umanual = 0;
+  double g_umbh = 0;
+  double g_umbw = 0;
+  double g_umbx = 0;
+  double g_umby = 0;
   double g_umc = 0;
   double g_umh = 0;
   double g_umode = 0;
@@ -234,6 +245,8 @@ struct Gen : Runtime {
   double g_upt = 0;
   double g_upx = 0;
   double g_upy = 0;
+  double g_uqx = 0;
+  double g_uqy = 0;
   double g_ura = 0;
   double g_urbh = 0;
   double g_urbw = 0;
