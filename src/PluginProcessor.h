@@ -1,9 +1,14 @@
 #pragma once
+#include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "engine.h"
 
 class BinocularProcessor : public juce::AudioProcessor {
 public:
+    // the editor window size, remembered with the project and for the next time the window opens
+    // (a new Binocular starts with the size last used in this session)
+    static inline std::atomic<int> sessionW { 680 }, sessionH { 520 };
+    std::atomic<int> editorW { sessionW.load() }, editorH { sessionH.load() };
     BinocularProcessor();
     ~BinocularProcessor() override = default;
 

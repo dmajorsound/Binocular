@@ -7,7 +7,8 @@ BinocularEditor::BinocularEditor(BinocularProcessor& p)
     setWantsKeyboardFocus(true);    // options:want_all_kb
     setResizable(true, true);
     setResizeLimits(340, 260, 4000, 3000);
-    setSize(680, 520);              // @gfx 680 520
+    setSize(juce::jlimit(340, 4000, p.editorW.load()), juce::jlimit(260, 3000, p.editorH.load()));   // @gfx 680 520, or the last size
+    sizeReady = true;
     gfx.isKeyDown = [](int c) {
         using K = juce::KeyPress;
         switch (c) {

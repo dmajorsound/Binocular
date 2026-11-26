@@ -273,6 +273,8 @@ struct Gen : Runtime {
   double g_uvx = 0;
   double g_uvx2 = 0;
   double g_uvx3 = 0;
+  double g_uwp = 0;
+  double g_uwx = 0;
   double g_uxv = 0;
   double g_uxw = 0;
   double g_uxx = 0;

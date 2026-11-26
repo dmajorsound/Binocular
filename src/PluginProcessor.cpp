@@ -155,6 +155,9 @@ void BinocularProcessor::getStateInformation(juce::MemoryBlock& dest) {
     for (int i = 0; i < rs::kNumSliders; i++) { os.writeInt(rs::kSliders[i].idx); os.writeDouble(sl[(size_t)i]); }
     os.writeInt((int)ser.size());
     for (float f : ser) os.writeFloat(f);
+    os.writeInt(0x455A4953);   // "SIZE": the editor window size (older versions stop reading before it)
+    os.writeInt(editorW.load());
+    os.writeInt(editorH.load());
 }
 
 void BinocularProcessor::setStateInformation(const void* data, int size) {
@@ -166,6 +169,17 @@ void BinocularProcessor::setStateInformation(const void* data, int size) {
     const int nf = is.readInt();
     std::vector<float> ser;
     for (int i = 0; i < nf && !is.isExhausted(); i++) ser.push_back(is.readFloat());
+    if (!is.isExhausted() && is.readInt() == 0x455A4953) {
+        const int w = is.readInt(), h = is.readInt();
+        if (w >= 340 && w <= 4000 && h >= 260 && h <= 3000) {
+            editorW = w;
+            editorH = h;
+            if (auto* ed = getActiveEditor()) {   // a project loaded while the window is open
+                juce::Component::SafePointer<juce::AudioProcessorEditor> sp(ed);
+                juce::MessageManager::callAsync([sp, w, h] { if (sp != nullptr) sp->setSize(w, h); });
+            }
+        }
+    }
     {
         const juce::ScopedLock l(engineLock);
         for (auto& [n, v] : sl) engine.setSlider(n, v);

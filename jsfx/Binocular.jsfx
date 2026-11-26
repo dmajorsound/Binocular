@@ -1,10 +1,10 @@
 desc: Binocular
 //author: dmajorsound
 //tags: analysis meter correlation phase stereo mono
-//version: 1.0.5
+//version: 1.0.6
 //about: Binocular - Mmm… coherent. Multiband correlation meter and goniometer. Shows for every frequency band whether left and right
 //  (or a track and its sidechain) are in phase, unrelated or out of phase.
-//  Up to 64 bands: a filter bank with no delay. 128 and 256 bands: an FFT cross-spectrum.
+//  All band counts: an FFT cross-spectrum (the old filter bank cost up to 3x the CPU).
 //  Also shows how much each band loses in mono, and the time offset and polarity between the sides.
 //  The audio passes through untouched, with no latency.
 
@@ -77,14 +77,14 @@ m_bl[6] = 48; m_bl[7] = 64; m_bl[8] = 128; m_bl[9] = 256;
 
 // ---------------------------------------------------------------- setup
 // Log-spaced bands from 20 Hz to 20 kHz.
-// Up to 64 bands: each band is two cascaded band-pass filters (0 dB at the center), left and right alike.
-// 128 and 256 bands: read from the FFT cross-spectrum. A band takes the short FFT (fast) when it is
+// All band counts read the FFT cross-spectrum. (The filter bank code below is kept but no longer used:
+// two cascaded band-pass filters per band cost up to 3x the CPU of the FFT.) A band takes the short FFT (fast) when it is
 // at least 3 of its bins wide, otherwise the long FFT (fine enough for the bass).
 // The long FFT always runs: it also finds the offset and the polarity.
 function setup() local(i, p, fc, w0, al, sp, wm, bw, xs, bo, e0, e1)
 (
   nb = m_bl[max(0, min(9, floor(slider1+0.5)))];
-  ffm = nb > 64;
+  ffm = 1;
   fn = srate <= 50000 ? 16384 : 32768;   // long: 2.9 Hz per bin at 48 and 96 kHz
   fhop = fn/16;   // long spectrum ~47 times per second (smooth bars)
   fnb = fn/2;
@@ -657,8 +657,10 @@ udark ? (
 usc = max(0.5, min(gfx_w/680, gfx_h/520));
 // frame time: fades and decays run per second, not per frame (same look at 30 or 60 frames per second)
 uftn = time_precise(); uft = max(0.25, min(3, (uftn - uftl)*30)); uftl = uftn;
-uox = floor((gfx_w - 680*usc)/2);
 uex = max(0, gfx_h/usc - 520);           // extra height goes to the display
+uwx = max(0, floor(gfx_w/usc - 680));    // extra width goes to the display too: no empty bars at the sides
+uwp = floor(uwx*usc);                    // the same in pixels, for everything anchored on the right
+uox = floor((gfx_w - (680+uwx)*usc)/2);
 ulb = mouse_cap & 1;
 upress = ulb && !ulbp;
 uhov = 0;
@@ -717,7 +719,7 @@ utab(uvx, uvw, umode == 0, uhov == 30, "CORRELATION");
 utab(uvx2, uvw2, umode == 1, uhov == 31, "MONO LOSS");
 utab(uvx3, uvw3, umode == 2, uhov == 35, "GONIOMETER");
 ucol(ucBG, 1); gfx_rect(uvx-2, floor(50*usc), uvx3+uvw3-uvx+4, floor(12*usc));
-ucol(udark ? ucHAIR : ucBORD, 1); gfx_rect(uox, floor(50*usc), floor(680*usc), 1);
+ucol(udark ? ucHAIR : ucBORD, 1); gfx_rect(uox, floor(50*usc), floor(680*usc) + uwp, 1);
 ucol(ucBG, 1);
 ubb = max(1, floor(1.4*usc));
 umode == 0 ? gfx_rect(uvx+ubb, floor(50*usc), uvw-2*ubb, 1) :
@@ -725,8 +727,8 @@ umode == 1 ? gfx_rect(uvx2+ubb, floor(50*usc), uvw2-2*ubb, 1) :
              gfx_rect(uvx3+ubb, floor(50*usc), uvw3-2*ubb, 1);
 
 // input: two round buttons, Stereo (L vs R) or Sidechain (this track vs inputs 3/4)
-ubx1 = floor(uox+520*usc); ubw1 = floor(46*usc);
-ubx2 = floor(uox+570*usc); ubw2 = floor(60*usc);
+ubx1 = floor(uox+520*usc) + uwp; ubw1 = floor(46*usc);
+ubx2 = floor(uox+570*usc) + uwp; ubw2 = floor(60*usc);
 uby = floor(24*usc); ubh = floor(18*usc);
 uin(ubx1, uby, ubw1, ubh) ? uhov = 11;
 uin(ubx2, uby, ubw2, ubh) ? uhov = 12;
@@ -742,7 +744,7 @@ loop(2,
 );
 
 // theme, top right corner: shows the mode it is in. Dark = a crescent moon, light = a sun, both drawn in outlines.
-utx = floor(uox+655*usc); uty = floor(33*usc); utr = 9*usc;
+utx = floor(uox+655*usc) + uwp; uty = floor(33*usc); utr = 9*usc;
 uinc(utx, uty, utr+3*usc) ? uhov = 13;
 ucol(uhov == 13 ? ucTEXT : ucMUTED, 1);
 udark ? (
@@ -759,7 +761,7 @@ udark ? (
 );
 
 // ---- display: correlation (+1 top, -1 bottom) or mono loss (0 dB top, down to the range)
-ugx = floor(uox+34*usc); ugw = floor(638*usc);
+ugx = floor(uox+34*usc); ugw = floor(638*usc) + uwp;
 ugy = floor(62*usc); ugh = floor((284+uex)*usc);
 upd = 7*usc;
 upt = uview ? 26*usc : upd;              // mono loss: room on top for the range button
@@ -1014,7 +1016,7 @@ ufrz ? (
 ucol(ucHAIR, 1); urr(ugx, ugy, ugw, ugh, 4*usc, 0);
 
 // ---- total: the full signal on one classic bar
-umy = floor((364+uex)*usc); umh = floor(14*usc); umw = floor(586*usc);
+umy = floor((364+uex)*usc); umh = floor(14*usc); umw = floor(586*usc) + uwp;
 gfx_setfont(8); ucol(ucDIM, 1); uright("TOTAL", ugx-4*usc, umy+3*usc);
 ucol(ucSURF, 1); urr(ugx, umy, umw, umh, 3*usc, 1);
 ucol(ucMUTE, udark ? 0.07 : 0.05); gfx_rect(ugx+1, umy+1, floor(umw/2)-1, umh-2);
@@ -1045,10 +1047,10 @@ usel = udrag == 2 || (uhov == 1 && (mouse_cap & 16));   // Alt on Bands: selecti
 usel ? sprintf(#uv1, "Sel. %d %%", floor(slider2+0.5)) : sprintf(#uv1, "%d", unbs);
 slider3 < 1000 ? sprintf(#uv3, "%d ms", floor(slider3+0.5)) : sprintf(#uv3, "%.1f s", slider3/1000);
 !ugon ? uknob(1, uox+80*usc, uky, ukr, usel ? ufrac(2) : ufrac(1), "BANDS", #uv1, usel ? 0 : 9);
-uknob(3, uox+190*usc, uky, ukr, ufrac(3), "AVERAGING", #uv3, 0);
+uknob(3, uox+190*usc + floor(uwp/4), uky, ukr, ufrac(3), "AVERAGING", #uv3, 0);
 
 // offset: info only, the audio is never moved
-uofx = floor(uox+262*usc); uofw = floor(160*usc); uofy = floor(uky-24*usc); uofh = floor(48*usc);
+uofx = floor(uox+262*usc) + floor(uwp/2); uofw = floor(160*usc); uofy = floor(uky-24*usc); uofh = floor(48*usc);
 gfx_setfont(7); ucol(ucMUTED, 1); utext("OFFSET", uofx+uofw/2, ulby);
 ucol(ucSURF, 1); urr(uofx, uofy, uofw, uofh, 4*usc, 1);
 ucol(ucBORD, 1); urr(uofx, uofy, uofw, uofh, 4*usc, 0);
@@ -1078,7 +1080,7 @@ ofs_ok ? (
 ubh2 = floor(22*usc); uby2 = floor(uky-11*usc);
 // reference: capture the current curve as a line, click again to clear it (not on the goniometer page)
 !ugon ? (
-  urfx = floor(uox+466*usc); urfw = floor(80*usc);
+  urfx = floor(uox+466*usc) + floor(uwp*3/4); urfw = floor(80*usc);
   gfx_setfont(7); ucol(ucMUTED, 1); utext("REFERENCE", urfx+urfw/2, ulby);
   uin(urfx, uby2, urfw, ubh2) ? uhov = 33;
   gfx_setfont(3);
@@ -1086,14 +1088,14 @@ ubh2 = floor(22*usc); uby2 = floor(uky-11*usc);
 );
 
 // hold lows: one switch. Click: off / 3 s. Shift-click: infinite.
-uhx = floor(uox+590*usc); uhw = floor(82*usc);
+uhx = floor(uox+590*usc) + uwp; uhw = floor(82*usc);
 gfx_setfont(7); ucol(ucMUTED, 1); utext("HOLD LOWS", uhx+uhw/2, ulby);
 uin(uhx, uby2, uhw, ubh2) ? uhov = 4;
 gfx_setfont(3);
 ubtn(uhx, uby2, uhw, ubh2, slider5 >= 0.5, uhov == 4, slider5 < 0.5 ? "Off" : slider5 < 1.5 ? "3 s" : "Infinite");
 
 // reset: its own button under Hold lows, set apart, so it reads as a reset of the whole plugin
-urbx = floor(uox+590*usc); urbw = floor(82*usc); urby = floor(uky+28*usc); urbh = floor(20*usc);
+urbx = floor(uox+590*usc) + uwp; urbw = floor(82*usc); urby = floor(uky+28*usc); urbh = floor(20*usc);
 uin(urbx, urby, urbw, urbh) ? uhov = 14;
 gfx_setfont(3);
 ubtn(urbx, urby, urbw, urbh, 0, uhov == 14, "");
@@ -1110,9 +1112,9 @@ gfx_x = floor(urx + 10*usc); gfx_y = floor(ury - urth/2); gfx_drawstr("Reset plu
 
 // ---- status line, bottom left, above the footer line: explains whatever is under the mouse
 // footer: bottom left, the same in every dmajorsound plugin
-ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc), 1);
+ucol(ucLINE, 1); gfx_rect(uox, floor((498+uex)*usc), floor(680*usc) + uwp, 1);
 gfx_setfont(10); ucol(ucDIM, 1);
-gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.5 - developed with AI assistance");
+gfx_x = uox+16*usc; gfx_y = (503+uex)*usc; gfx_drawstr("V 1.0.6 - developed with AI assistance");
 // newer version on GitHub (as in OLAAF): the VST3 / AU / CLAP version asks GitHub once per session and sets updv
 // (major*10000 + minor*100 + patch); in REAPER's JSFX it stays 0 and nothing is shown
 updv > 0 ? (
@@ -1129,15 +1131,14 @@ updv > 0 ? (
 // footer right: the dmajorsound mark in the corner, dmajorsound.com to its left (the same in every dmajorsound plugin)
 gfx_setfont(10); gfx_measurestr("dmajorsound.com", uftw, ufth);
 ufcy = floor((503+uex)*usc + ufth/2);
-ucol(ucMUTED, 1); ulogo(floor(uox+656*usc), ufcy); gfx_a = 1;   // 8 units clear of the window resize corner
-ucol(ucDIM, 1); uright("dmajorsound.com", floor(uox+656*usc - (usc >= 1.5 ? lgw2 : lgw1) - 8*usc), floor(ufcy - ufth/2));
+ucol(ucMUTED, 1); ulogo(floor(uox+656*usc) + uwp, ufcy); gfx_a = 1;   // 8 units clear of the window resize corner
+ucol(ucDIM, 1); uright("dmajorsound.com", uwp + floor(uox+656*usc - (usc >= 1.5 ? lgw2 : lgw1) - 8*usc), floor(ufcy - ufth/2));
 
 gfx_setfont(2); ucol(ucMUTED, 1);
 gfx_x = uox+16*usc; gfx_y = (482+uex)*usc;
 uhov == 1 ? gfx_drawstr(usel ? "Selectivity (Alt-drag): higher makes each band narrower and sharper, lower blends neighbors."
                              : "Bands: how many frequency bands the meter splits the signal into. Alt-drag sets the selectivity.") :
-uhov == 3 ? gfx_drawstr(unbs > 64 ? "Averaging: above 64 bands, mids and highs need at least 0.1 s, the bass about 0.3 s."
-                                   : "Averaging: short shows every hit, long shows the overall picture.") :
+uhov == 3 ? gfx_drawstr("Averaging: mids and highs need at least 0.1 s, the bass about 0.3 s.") :
 uhov == 4 ? gfx_drawstr("Hold lows: keeps the lowest reading of each band for 3 s. Shift-click holds until you click the display.") :
 uhov == 10 ? gfx_drawstr(ufrz ? "Off: the meter shows its last picture. Click to switch it on." : "On: the meter runs. Off keeps the last picture to read it. The audio always passes untouched.") :
 uhov == 11 ? gfx_drawstr("Stereo: compares left and right of this track.") :

@@ -1,15 +1,18 @@
-# Binocular 1.0.5 – VST3 / AU / CLAP
+# Binocular 1.0.6 – VST3 / AU / CLAP
 
-Multiband correlation meter and goniometer by dmajorsound (dmajorsound.com). Native C++ port of `jsfx/Binocular.jsfx`
-as VST3 (macOS additionally AU). Audio and interface are those of the JSFX; the audio passes through untouched, no latency.
+Multiband correlation meter and goniometer by dmajorsound (dmajorsound.com) as VST3, CLAP and (macOS) AU.
+The audio passes through untouched, no latency.
+
+Binocular is no longer released as a REAPER JSFX. `jsfx/Binocular.jsfx` stays in this repository only as the source
+the plug-in is generated from (see below); it is not a supported product on its own.
 
 ## Install on the Mac (no programming needed)
 
-**Installer:** on GitHub, open *Releases* and download `Binocular_1.0.5_installer_mac.pkg` (Mac) or
-`Binocular_1.0.5_installer_win64.exe` (Windows). Open it and click through; it installs VST3, CLAP and (Mac) AU into the
+**Installer:** on GitHub, open *Releases* and download `Binocular_1.0.6_installer_mac.pkg` (Mac) or
+`Binocular_1.0.6_installer_win64.exe` (Windows). Open it and click through; it installs VST3, CLAP and (Mac) AU into the
 common plug-in folders. Mac: the installer is not signed by Apple, so right-click it and choose *Open* the first time.
 
-**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0.5_mac`. Unzip,
+**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0.6_mac`. Unzip,
 then copy `Binocular.vst3` into `~/Library/Audio/Plug-Ins/VST3/` and `Binocular.component` into
 `~/Library/Audio/Plug-Ins/Components/`. In REAPER: *Options → Preferences → Plug-ins → VST → Re-scan*.
 

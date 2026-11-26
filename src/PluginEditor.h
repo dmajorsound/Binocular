@@ -9,7 +9,7 @@ public:
     ~BinocularEditor() override;
 
     void paint(juce::Graphics&) override;
-    void resized() override {}
+    void resized() override { if (sizeReady) { proc.editorW = proc.sessionW = getWidth(); proc.editorH = proc.sessionH = getHeight(); } }   // remembered for next time
 
     void mouseMove(const juce::MouseEvent& e) override { mouse(e); }
     void mouseDrag(const juce::MouseEvent& e) override { mouse(e); }
@@ -33,6 +33,7 @@ private:
     int liveCap = 0;          // modifier + button state right now
     int latchedButtons = 0;
     int lastCursor = -1;
+    bool sizeReady = false;
     // diagnostics: per-second timing lines appended to ~/Desktop/binocular-debug.txt if that file exists
     juce::File diagFile;
     double diagT0 = 0, lastTick = 0;
