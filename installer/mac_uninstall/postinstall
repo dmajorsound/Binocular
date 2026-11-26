@@ -1,0 +1,12 @@
+#!/bin/sh
+# Binocular uninstaller: removes the plug-in in every format, from the system plug-in folders
+# and (from older manual installs) from the plug-in folders of the logged-in user.
+USER_NAME=$(stat -f%Su /dev/console)
+USER_HOME=$(dscl . -read "/Users/$USER_NAME" NFSHomeDirectory | awk '{print $2}')
+for BASE in "/Library/Audio/Plug-Ins" "$USER_HOME/Library/Audio/Plug-Ins"; do
+  rm -rf "$BASE/VST3/Binocular.vst3" "$BASE/Components/Binocular.component" "$BASE/CLAP/Binocular.clap"
+done
+for ID in vst3 au clap uninstall; do pkgutil --forget "com.dmajorsound.binocular.$ID" >/dev/null 2>&1; done
+# Logic and GarageBand keep a list of Audio Units: let it refresh
+killall -9 AudioComponentRegistrar >/dev/null 2>&1
+exit 0
