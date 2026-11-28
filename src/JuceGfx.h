@@ -46,6 +46,8 @@ private:
     struct FontSlot { juce::Font font { juce::FontOptions() }; std::string key; bool set = false; };
     // text is the expensive part in JUCE: fonts, string widths and laid-out glyphs are cached
     std::unordered_map<std::string, juce::Font> fontCache;
+    static juce::Typeface::Ptr embeddedTypeface(const std::string& name);
+    static float embeddedHeightScale(const std::string& name);
     std::unordered_map<std::string, float> widthCache;
     std::unordered_map<std::string, juce::Image> textCache;   // rendered strings (font + colour + text): a blit per frame
                                                               // instead of rasterizing glyphs (CoreText on the Mac) every time

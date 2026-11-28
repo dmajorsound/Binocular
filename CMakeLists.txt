@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Universal (Apple Silicon + Intel). For a faster Intel-only build: -DCMAKE_OSX_ARCHITECTURES=x86_64
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
-project(Binocular VERSION 1.1.0 LANGUAGES C CXX)
+project(Binocular VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,7 +24,7 @@ juce_add_plugin(Binocular
   PLUGIN_CODE Bnoc
   FORMATS ${BN_FORMATS}
   PRODUCT_NAME "Binocular"
-  VERSION 1.1.0
+  VERSION 1.2.0
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT FALSE
   NEEDS_MIDI_OUTPUT FALSE
@@ -57,7 +57,13 @@ else()
   target_compile_options(Binocular PRIVATE -ffp-contract=off -fno-fast-math)
 endif()
 
-target_link_libraries(Binocular PRIVATE
+# the plug-in's typefaces (SIL Open Font License, see fonts/): Mulish for text, Red Hat Mono for numbers
+juce_add_binary_data(BinocularFonts SOURCES
+  fonts/Mulish-Regular.ttf fonts/Mulish-SemiBold.ttf fonts/Mulish-Bold.ttf
+  fonts/RedHatMono-Medium.ttf fonts/RedHatMono-SemiBold.ttf)
+set_target_properties(BinocularFonts PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_link_libraries(Binocular PRIVATE BinocularFonts
   juce::juce_audio_processors juce::juce_gui_basics
   PUBLIC juce::juce_recommended_config_flags)
 

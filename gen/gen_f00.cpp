@@ -36,9 +36,79 @@ double Gen::F_fsum(double p0, double p1, double p2) {
   return ((void)(ASG(L_fsum_k, rt_min(std::floor(L_fsum_u), (L_fsum_nbn - 1.0)))), (M((L_fsum_c + L_fsum_k)) + ((L_fsum_u - L_fsum_k) * (M((L_fsum_c + (L_fsum_k + 1.0))) - M((L_fsum_c + L_fsum_k))))));
 }
 
+double Gen::F_lcalc() {
+  
+  return ((void)((L_lcalc_n = 0.0)), (void)((L_lcalc_e = 0.0)), (void)((L_lcalc_b = 0.0)), (void)([&]() -> double { int n_ = rt_i32(800.0); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcalc_n += M((g_m_hmc + L_lcalc_b)))), (void)((L_lcalc_e += M((g_m_hme + L_lcalc_b)))), (L_lcalc_b += 1.0))); } return 0.0; }()), (void)((g_lint = (-200.0))), (void)((((L_lcalc_n > 0.5) && (L_lcalc_e > 0.0)) ? (double)((void)(ASG(L_lcalc_g, rt_max(0.0, std::ceil(((((-0.691) + ((10.0 * rt_log10((L_lcalc_e / L_lcalc_n))) - 10.0)) + 70.0) * 10.0))))), (void)((L_lcalc_n2 = 0.0)), (void)((L_lcalc_e2 = 0.0)), (void)((L_lcalc_b = L_lcalc_g)), (void)([&]() -> double { int n_ = rt_i32(rt_max(0.0, (800.0 - L_lcalc_g))); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcalc_n2 += M((g_m_hmc + L_lcalc_b)))), (void)((L_lcalc_e2 += M((g_m_hme + L_lcalc_b)))), (L_lcalc_b += 1.0))); } return 0.0; }()), (((L_lcalc_n2 > 0.5) && (L_lcalc_e2 > 0.0)) ? (double)ASG(g_lint, ((-0.691) + (10.0 * rt_log10((L_lcalc_e2 / L_lcalc_n2))))) : 0.0)) : 0.0)), (void)((L_lcalc_n = 0.0)), (void)((L_lcalc_e = 0.0)), (void)((L_lcalc_b = 0.0)), (void)([&]() -> double { int n_ = rt_i32(800.0); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcalc_n += M((g_m_hsc + L_lcalc_b)))), (void)((L_lcalc_e += M((g_m_hse + L_lcalc_b)))), (L_lcalc_b += 1.0))); } return 0.0; }()), (void)((g_llra = (-1.0))), (void)((((L_lcalc_n > 0.5) && (L_lcalc_e > 0.0)) ? (double)((void)(ASG(L_lcalc_g, rt_max(0.0, std::ceil(((((-0.691) + ((10.0 * rt_log10((L_lcalc_e / L_lcalc_n))) - 20.0)) + 70.0) * 10.0))))), (void)((L_lcalc_n2 = 0.0)), (void)((L_lcalc_b = L_lcalc_g)), (void)([&]() -> double { int n_ = rt_i32(rt_max(0.0, (800.0 - L_lcalc_g))); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcalc_n2 += M((g_m_hsc + L_lcalc_b)))), (L_lcalc_b += 1.0))); } return 0.0; }()), ((L_lcalc_n2 > 0.5) ? (double)((void)((L_lcalc_cum = 0.0)), (void)((L_lcalc_b = L_lcalc_g)), (void)((L_lcalc_lo = (-1.0))), (void)((L_lcalc_hi = (-1.0))), (void)([&]() -> double { int n_ = rt_i32(rt_max(0.0, (800.0 - L_lcalc_g))); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcalc_cum += M((g_m_hsc + L_lcalc_b)))), (void)((((L_lcalc_lo < 0.0) && (L_lcalc_cum >= (0.1 * L_lcalc_n2))) ? (double)(L_lcalc_lo = L_lcalc_b) : 0.0)), (void)((((L_lcalc_hi < 0.0) && (L_lcalc_cum >= (0.95 * L_lcalc_n2))) ? (double)(L_lcalc_hi = L_lcalc_b) : 0.0)), (L_lcalc_b += 1.0))); } return 0.0; }()), ASG(g_llra, rt_max(0.0, ((L_lcalc_hi - L_lcalc_lo) * 0.1)))) : 0.0)) : 0.0)), (g_ldirty = 0.0));
+}
+
+double Gen::F_lcoef() {
+  
+  return ((void)(ASG(L_lcoef_k, rt_tan((3.141592653589793 * (1681.974450955533 / v_srate))))), (void)((L_lcoef_q = 0.7071752369554196)), (void)((L_lcoef_vh = 1.5848647011308556)), (void)(ASG(L_lcoef_vb, rt_pow(L_lcoef_vh, 0.4996667741545416))), (void)(ASG(L_lcoef_a0, ((1.0 + (L_lcoef_k / L_lcoef_q)) + (L_lcoef_k * L_lcoef_k)))), (void)(ASG(g_kb0, (((L_lcoef_vh + (L_lcoef_vb * (L_lcoef_k / L_lcoef_q))) + (L_lcoef_k * L_lcoef_k)) / L_lcoef_a0))), (void)(ASG(g_kb1, (2.0 * (((L_lcoef_k * L_lcoef_k) - L_lcoef_vh) / L_lcoef_a0)))), (void)(ASG(g_kb2, (((L_lcoef_vh - (L_lcoef_vb * (L_lcoef_k / L_lcoef_q))) + (L_lcoef_k * L_lcoef_k)) / L_lcoef_a0))), (void)(ASG(g_ka1, (2.0 * (((L_lcoef_k * L_lcoef_k) - 1.0) / L_lcoef_a0)))), (void)(ASG(g_ka2, (((1.0 - (L_lcoef_k / L_lcoef_q)) + (L_lcoef_k * L_lcoef_k)) / L_lcoef_a0))), (void)(ASG(L_lcoef_k, rt_tan((3.141592653589793 * (38.13547087613982 / v_srate))))), (void)((L_lcoef_q = 0.5003270373253953)), (void)(ASG(L_lcoef_a0, ((1.0 + (L_lcoef_k / L_lcoef_q)) + (L_lcoef_k * L_lcoef_k)))), (void)((g_hb0 = 1.0)), (void)((g_hb1 = (-2.0))), (void)((g_hb2 = 1.0)), (void)(ASG(g_ha1, (2.0 * (((L_lcoef_k * L_lcoef_k) - 1.0) / L_lcoef_a0)))), (void)(ASG(g_ha2, (((1.0 - (L_lcoef_k / L_lcoef_q)) + (L_lcoef_k * L_lcoef_k)) / L_lcoef_a0))), (void)(ASG(g_tpo, ((v_srate < 100000.0) ? (double)4.0 : (double)2.0))), (void)(ASG(L_lcoef_l, (12.0 * g_tpo))), (void)(ASG(L_lcoef_c, ((L_lcoef_l - 1.0) / 2.0))), (void)((L_lcoef_t = 0.0)), (void)([&]() -> double { int n_ = rt_i32(L_lcoef_l); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(L_lcoef_x, ((L_lcoef_t - L_lcoef_c) / g_tpo))), (void)(ASG(L_lcoef_w, (0.5 - (0.5 * rt_cos((6.283185307179586 * ((L_lcoef_t + 1.0) / (L_lcoef_l + 1.0)))))))), (void)(ASG(M((g_m_tpc + L_lcoef_t)), (((std::fabs(L_lcoef_x) < 1e-06) ? (double)1.0 : (double)(rt_sin((3.141592653589793 * L_lcoef_x)) / (3.141592653589793 * L_lcoef_x))) * L_lcoef_w))), (L_lcoef_t += 1.0))); } return 0.0; }()), (void)((L_lcoef_p = 0.0)), (void)([&]() -> double { int n_ = rt_i32(g_tpo); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcoef_s = 0.0)), (void)((L_lcoef_k = 0.0)), (void)([&]() -> double { int n_ = rt_i32(12.0); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lcoef_s += M((g_m_tpc + (L_lcoef_p + (g_tpo * L_lcoef_k)))))), (L_lcoef_k += 1.0))); } return 0.0; }()), (void)((L_lcoef_k = 0.0)), (void)([&]() -> double { int n_ = rt_i32(12.0); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(M((g_m_tpc + (L_lcoef_p + (g_tpo * L_lcoef_k)))), (M((g_m_tpc + (L_lcoef_p + (g_tpo * L_lcoef_k)))) / L_lcoef_s))), (L_lcoef_k += 1.0))); } return 0.0; }()), (L_lcoef_p += 1.0))); } return 0.0; }()), (g_lsr2 = v_srate));
+}
+
+double Gen::F_lcolr(double p0, double p1, double p2) {
+  L_lcolr_l = p0; L_lcolr_t = p1; L_lcolr_tol = p2;
+  return ((L_lcolr_l <= (-70.0)) ? g_ucdim : (((L_lcolr_l - L_lcolr_t) > (L_lcolr_tol + 2.0)) ? g_ucred : (((L_lcolr_l - L_lcolr_t) > L_lcolr_tol) ? g_ucwarn : (((L_lcolr_l - L_lcolr_t) < (-(L_lcolr_tol + 6.0))) ? g_ucblue : g_ucmint))));
+}
+
 double Gen::F_ldec(double p0, double p1, double p2) {
   L_ldec_str = p0; L_ldec_dst = p1; L_ldec_n = p2;
   return ((void)((L_ldec_i = 0.0)), [&]() -> double { int n_ = rt_i32(L_ldec_n); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(L_ldec_c, str_getchar({L_ldec_str, L_ldec_i}))), (void)(ASG(M((L_ldec_dst + L_ldec_i)), ((L_ldec_c <= 57.0) ? (double)(L_ldec_c - 48.0) : (double)((L_ldec_c - 97.0) + 10.0)))), (L_ldec_i += 1.0))); } return 0.0; }());
+}
+
+double Gen::F_lhist(double p0, double p1, double p2, double p3) {
+  L_lhist_e = p0; L_lhist_cn = p1; L_lhist_en = p2; L_lhist_sg = p3;
+  return ((L_lhist_e > 0.0) ? (double)((void)(ASG(L_lhist_l, ((-0.691) + (10.0 * rt_log10(L_lhist_e))))), ((L_lhist_l >= (-70.0)) ? (double)((void)(ASG(L_lhist_b, rt_min(799.0, std::floor(((L_lhist_l + 70.0) * 10.0))))), (void)((M((L_lhist_cn + L_lhist_b)) += L_lhist_sg)), (M((L_lhist_en + L_lhist_b)) += (L_lhist_sg * L_lhist_e))) : 0.0)) : 0.0);
+}
+
+double Gen::F_lradd(double p0) {
+  L_lradd_e = p0;
+  return ((void)(ASG(L_lradd_s, F_lrspan())), (void)((M((g_m_lhi + rt_mod(g_lht, g_ln))) = L_lradd_e)), (void)(ASG(L_lradd_k, std::floor((rt_mod(g_lht, L_lradd_s) * (360.0 / L_lradd_s))))), (void)((NE(L_lradd_k, g_lrk) ? (double)((void)((M((g_m_wde + L_lradd_k)) = 0.0)), (void)((M((g_m_wdn + L_lradd_k)) = 0.0)), (g_lrk = L_lradd_k)) : 0.0)), (void)((M((g_m_wde + L_lradd_k)) += L_lradd_e)), (void)((M((g_m_wdn + L_lradd_k)) += 1.0)), (g_lht += 1.0));
+}
+
+double Gen::F_lrbuild() {
+  
+  return ((void)(ASG(L_lrbuild_s, F_lrspan())), (void)(memset(g_m_wde, 0.0, 360.0)), (void)(memset(g_m_wdn, 0.0, 360.0)), (void)(ASG(L_lrbuild_n, rt_min(g_lht, L_lrbuild_s))), (void)(ASG(L_lrbuild_j, (g_lht - L_lrbuild_n))), (void)((g_lrk = (-1.0))), (void)([&]() -> double { int n_ = rt_i32(L_lrbuild_n); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(L_lrbuild_k, std::floor((rt_mod(L_lrbuild_j, L_lrbuild_s) * (360.0 / L_lrbuild_s))))), (void)((M((g_m_wde + L_lrbuild_k)) += M((g_m_lhi + rt_mod(L_lrbuild_j, g_ln))))), (void)((M((g_m_wdn + L_lrbuild_k)) += 1.0)), (void)((g_lrk = L_lrbuild_k)), (L_lrbuild_j += 1.0))); } return 0.0; }()), (g_lrsp = sl[12]));
+}
+
+double Gen::F_lreset() {
+  
+  return ((void)(memset(g_m_lme, 0.0, g_ln)), (void)(memset(g_m_lse, 0.0, g_ln)), (void)(memset(g_m_lhs, 0.0, g_ln)), (void)(memset(g_m_hmc, 0.0, 4096.0)), (void)(memset(g_m_lr30, 0.0, 32.0)), (void)(memset(g_m_wde, 0.0, 360.0)), (void)(memset(g_m_wdn, 0.0, 360.0)), (void)(memset(g_m_tph, 0.0, 32.0)), (void)(ASG(g_lk1l, ASG(g_lk2l, ASG(g_lk1r, ASG(g_lk2r, ASG(g_lh1l, ASG(g_lh2l, ASG(g_lh1r, (g_lh2r = 0.0))))))))), (void)((g_lcur = (-1000000000.0))), (void)((g_lprev = g_lcur)), (void)((g_lcont = 0.0)), (void)((g_lsum = 0.0)), (void)((g_lcnt = 0.0)), (void)((g_lvn = 0.0)), (void)((g_lri = 0.0)), (void)(ASG(g_lmom, (g_lst = (-200.0)))), (void)((g_lnsl = 0.0)), (void)((g_lht = 0.0)), (void)((g_lrk = (-1.0))), (void)((g_lint = (-200.0))), (void)((g_llra = (-1.0))), (void)((g_ltpk = 0.0)), (void)((g_ltpi = 0.0)), (void)((g_ldirty = 0.0)), (g_lreq = 0.0));
+}
+
+double Gen::F_lrspan() {
+  
+  return ((sl[12] < 0.5) ? (double)600.0 : (double)((sl[12] < 1.5) ? (double)3000.0 : (double)((sl[12] < 2.5) ? (double)9000.0 : (double)((sl[12] < 3.5) ? (double)18000.0 : (double)((sl[12] < 4.5) ? (double)36000.0 : (double)((sl[12] < 5.5) ? (double)72000.0 : (double)180000.0))))));
+}
+
+double Gen::F_lslot() {
+  
+  return ((void)(ASG(L_lslot_e, (g_lsum / g_lcnt))), (void)(ASG(g_lcont, (EQ(g_lcur, (g_lprev + 1.0)) ? (double)(g_lcont + 1.0) : (double)1.0))), (void)((g_lprev = g_lcur)), (void)((M((g_m_lr30 + g_lri)) = L_lslot_e)), (void)(ASG(g_lri, rt_mod((g_lri + 1.0), 30.0))), (void)((L_lslot_em = 0.0)), (void)((L_lslot_i = 0.0)), (void)(ASG(L_lslot_n, rt_min(4.0, g_lcont))), (void)([&]() -> double { int n_ = rt_i32(L_lslot_n); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lslot_em += M((g_m_lr30 + rt_mod((((g_lri - 1.0) - L_lslot_i) + 60.0), 30.0))))), (L_lslot_i += 1.0))); } return 0.0; }()), (void)(ASG(L_lslot_em, (L_lslot_em / L_lslot_n))), (void)((L_lslot_es = 0.0)), (void)((L_lslot_i = 0.0)), (void)(ASG(L_lslot_n, rt_min(30.0, g_lcont))), (void)([&]() -> double { int n_ = rt_i32(L_lslot_n); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)((L_lslot_es += M((g_m_lr30 + rt_mod((((g_lri - 1.0) - L_lslot_i) + 60.0), 30.0))))), (L_lslot_i += 1.0))); } return 0.0; }()), (void)(ASG(L_lslot_es, (L_lslot_es / L_lslot_n))), (void)(ASG(g_lmom, ((L_lslot_em > 0.0) ? (double)((-0.691) + (10.0 * rt_log10(L_lslot_em))) : (double)(-200.0)))), (void)(ASG(g_lst, ((L_lslot_es > 0.0) ? (double)((-0.691) + (10.0 * rt_log10(L_lslot_es))) : (double)(-200.0)))), (void)(F_lstore(g_lcur, ((g_lcont >= 4.0) ? (double)L_lslot_em : (double)0.0), ((g_lcont >= 30.0) ? (double)L_lslot_es : (double)0.0))), (void)(F_lradd(L_lslot_em)), (g_ldirty = 1.0));
+}
+
+double Gen::F_lstore(double p0, double p1, double p2) {
+  L_lstore_sid = p0; L_lstore_em = p1; L_lstore_es = p2;
+  return ((void)(ASG(L_lstore_i, (L_lstore_sid - (std::floor((L_lstore_sid / g_ln)) * g_ln)))), (void)((B(M((g_m_lhs + L_lstore_i))) ? (double)((void)(F_lhist(M((g_m_lme + L_lstore_i)), g_m_hmc, g_m_hme, (-1.0))), (void)(F_lhist(M((g_m_lse + L_lstore_i)), g_m_hsc, g_m_hse, (-1.0))), (g_lnsl -= 1.0)) : 0.0)), (void)((M((g_m_lme + L_lstore_i)) = L_lstore_em)), (void)((M((g_m_lse + L_lstore_i)) = L_lstore_es)), (void)((M((g_m_lhs + L_lstore_i)) = 1.0)), (void)(F_lhist(L_lstore_em, g_m_hmc, g_m_hme, 1.0)), (void)(F_lhist(L_lstore_es, g_m_hsc, g_m_hse, 1.0)), (g_lnsl += 1.0));
+}
+
+double Gen::F_ltgt(double p0) {
+  L_ltgt_p = p0;
+  return ((L_ltgt_p < 0.5) ? (double)(-23.0) : (double)((L_ltgt_p < 1.5) ? (double)(-27.0) : (double)(((L_ltgt_p > 3.5) && (L_ltgt_p < 4.5)) ? (double)(-16.0) : (double)(-14.0))));
+}
+
+double Gen::F_ltol(double p0) {
+  L_ltol_p = p0;
+  return ((L_ltol_p < 0.5) ? (double)0.5 : (double)((L_ltol_p < 1.5) ? (double)2.0 : (double)1.0));
+}
+
+double Gen::F_ltpl(double p0) {
+  L_ltpl_p = p0;
+  return (((L_ltpl_p > 0.5) && (L_ltpl_p < 1.5)) ? (double)(-2.0) : (double)(-1.0));
+}
+
+double Gen::F_lvcol(double p0, double p1, double p2, double p3) {
+  L_lvcol_l = p0; L_lvcol_t = p1; L_lvcol_tol = p2; L_lvcol_p = p3;
+  return ((L_lvcol_l <= (-70.0)) ? g_ucdim : ((std::fabs((L_lvcol_l - L_lvcol_t)) <= L_lvcol_tol) ? g_ucmint : ((L_lvcol_p < 1.5) ? g_ucred : ((L_lvcol_l > L_lvcol_t) ? g_ucwarn : g_ucblue))));
 }
 
 double Gen::F_setup() {
@@ -53,7 +123,7 @@ double Gen::F_uarc(double p0, double p1, double p2, double p3, double p4, double
 
 double Gen::F_ubtn(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
   L_ubtn_x = p0; L_ubtn_y = p1; L_ubtn_w = p2; L_ubtn_h = p3; L_ubtn_on = p4; L_ubtn_hot = p5; L_ubtn_str = p6;
-  return ((void)((B(L_ubtn_on) ? (double)((void)(F_ucol(g_ucact, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (3.0 * g_usc), 1.0)), (void)(F_ucol(g_ucacto, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (3.0 * g_usc), 0.0)), F_ucol(g_ucactx, 1.0)) : (double)((void)(F_ucol((B(L_ubtn_hot) ? g_uchair : g_ucsurf), 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (3.0 * g_usc), 1.0)), (void)(F_ucol(g_ucbord, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (3.0 * g_usc), 0.0)), F_ucol((B(L_ubtn_hot) ? g_uctext : g_ucmuted), 1.0)))), F_utext(L_ubtn_str, (L_ubtn_x + (L_ubtn_w / 2.0)), (L_ubtn_y + ((L_ubtn_h / 2.0) - (6.0 * g_usc)))));
+  return ((void)((B(L_ubtn_on) ? (double)((void)(F_ucol(g_ucacc, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(gfx_setfont({6.0})), F_ucol(g_ucacct, 1.0)) : (double)((void)(F_ucol((B(L_ubtn_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({9.0})), F_ucol(g_uctext, 1.0)))), F_utc(L_ubtn_str, (L_ubtn_x + (L_ubtn_w / 2.0)), (L_ubtn_y + (L_ubtn_h / 2.0))));
 }
 
 double Gen::F_ucol(double p0, double p1) {
@@ -63,12 +133,27 @@ double Gen::F_ucol(double p0, double p1) {
 
 double Gen::F_ucorr(double p0, double p1) {
   L_ucorr_v = p0; L_ucorr_a = p1;
-  return ((L_ucorr_v < 0.0) ? (double)F_ucol(g_ucmute, L_ucorr_a) : (double)((void)(ASG(L_ucorr_t, rt_min(1.0, L_ucorr_v))), (void)(ASG(v_gfx_r, (((rt_and(rt_shr(g_ucacto, 16.0), 255.0) * (1.0 - L_ucorr_t)) + (rt_and(rt_shr(g_ucgrn, 16.0), 255.0) * L_ucorr_t)) / 255.0))), (void)(ASG(v_gfx_g, (((rt_and(rt_shr(g_ucacto, 8.0), 255.0) * (1.0 - L_ucorr_t)) + (rt_and(rt_shr(g_ucgrn, 8.0), 255.0) * L_ucorr_t)) / 255.0))), (void)(ASG(v_gfx_b, (((rt_and(g_ucacto, 255.0) * (1.0 - L_ucorr_t)) + (rt_and(g_ucgrn, 255.0) * L_ucorr_t)) / 255.0))), (v_gfx_a = L_ucorr_a)));
+  return [&]() -> double { const double a0_ = F_ucorrc(L_ucorr_v); return F_ucol(a0_, L_ucorr_a); }();
+}
+
+double Gen::F_ucorrc(double p0) {
+  L_ucorrc_v = p0;
+  return ((L_ucorrc_v >= 0.0) ? (double)F_umix(g_ucblue, g_ucmint, (L_ucorrc_v / 0.6)) : (double)F_umix(g_uccoral, g_ucred, ((-L_ucorrc_v) / 0.6)));
+}
+
+double Gen::F_ucorrm(double p0, double p1) {
+  L_ucorrm_v = p0; L_ucorrm_a = p1;
+  return [&]() -> double { const double a0_ = [&]() -> double { const double a1_ = F_ucorrc(L_ucorrm_v); return F_umix(g_ucp, a1_, L_ucorrm_a); }(); return F_ucol(a0_, 1.0); }();
 }
 
 double Gen::F_udef(double p0) {
   L_udef_id = p0;
   return (EQ(L_udef_id, 1.0) ? (double)((void)((sl[1] = 7.0)), slider_automate_mask({1.0})) : (double)(EQ(L_udef_id, 2.0) ? (double)((void)((sl[2] = 50.0)), slider_automate_mask({2.0})) : (double)((void)((sl[3] = 300.0)), slider_automate_mask({4.0}))));
+}
+
+double Gen::F_udrop(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
+  L_udrop_x = p0; L_udrop_y = p1; L_udrop_w = p2; L_udrop_h = p3; L_udrop_hot = p4; L_udrop_str = p5; L_udrop_fnt = p6;
+  return ((void)(F_ucol((B(L_udrop_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({L_udrop_fnt})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_udrop_str, (L_udrop_x + ((L_udrop_w - (12.0 * g_usc)) / 2.0)), (L_udrop_y + (L_udrop_h / 2.0)))), (void)(F_ucol(g_ucmuted, 1.0)), gfx_triangle({(L_udrop_x + (L_udrop_w - (15.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (9.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (12.0 * g_usc))), ((L_udrop_y + (L_udrop_h / 2.0)) + (2.0 * g_usc))}));
 }
 
 double Gen::F_ufrac(double p0) {
@@ -91,9 +176,14 @@ double Gen::F_uinc(double p0, double p1, double p2) {
   return (((rt_sqr((v_mouse_x - L_uinc_cx)) + rt_sqr((v_mouse_y - L_uinc_cy))) <= (L_uinc_rad * L_uinc_rad)) ? 1.0 : 0.0);
 }
 
-double Gen::F_uknob(double p0, double p1, double p2, double p3, double p4, double p5, double p6, double p7) {
-  L_uknob_id = p0; L_uknob_cx = p1; L_uknob_cy = p2; L_uknob_rad = p3; L_uknob_f = p4; L_uknob_label = p5; L_uknob_val = p6; L_uknob_steps = p7;
-  return ((void)(ASG(L_uknob_hot, (((EQ(g_uhov, L_uknob_id) || EQ(g_udrag, L_uknob_id)) || (EQ(L_uknob_id, 1.0) && EQ(g_udrag, 2.0))) ? 1.0 : 0.0))), (void)(gfx_setfont({7.0})), (void)(F_ucol(g_ucmuted, 1.0)), (void)(F_utext(L_uknob_label, L_uknob_cx, ((L_uknob_cy - L_uknob_rad) - (20.0 * g_usc)))), (void)(F_ucol(g_uchair, 1.0)), (void)(F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), 2.356, (3.0 * g_usc))), (void)(((L_uknob_f > 0.002) ? (double)((void)(F_ucol(g_ucctl, (B(L_uknob_hot) ? (double)1.0 : (double)0.85))), F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), ((-2.356) + (4.712 * L_uknob_f)), (3.0 * g_usc))) : 0.0)), (void)(((L_uknob_steps > 0.0) ? (double)((void)((L_uknob_k = 0.0)), [&]() -> double { int n_ = rt_i32((L_uknob_steps + 1.0)); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(L_uknob_ka, ((-2.356) + (4.712 * (L_uknob_k / L_uknob_steps))))), (void)(F_ucol(g_ucdim, 1.0)), (void)(gfx_circle({(L_uknob_cx + (rt_sin(L_uknob_ka) * (L_uknob_rad + (5.0 * g_usc)))), (L_uknob_cy - (rt_cos(L_uknob_ka) * (L_uknob_rad + (5.0 * g_usc)))), rt_max(0.8, g_usc), 1.0, 1.0})), (L_uknob_k += 1.0))); } return 0.0; }()) : 0.0)), (void)(ASG(L_uknob_br, (L_uknob_rad - (6.0 * g_usc)))), (void)(F_ucol((B(L_uknob_hot) ? g_uchair : g_ucsurf), 1.0)), (void)(gfx_circle({L_uknob_cx, L_uknob_cy, L_uknob_br, 1.0, 1.0})), (void)(F_ucol(g_ucbord, 1.0)), (void)(gfx_circle({L_uknob_cx, L_uknob_cy, L_uknob_br, 0.0, 1.0})), (void)(ASG(L_uknob_ang, ((-2.356) + (4.712 * L_uknob_f)))), (void)(ASG(L_uknob_sx, rt_sin(L_uknob_ang))), (void)(ASG(L_uknob_sy, (-rt_cos(L_uknob_ang)))), (void)(F_ucol(g_ucctl, 1.0)), (void)((L_uknob_k = (-1.0))), (void)([&]() -> double { int n_ = rt_i32(3.0); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(gfx_line({(L_uknob_cx + (((L_uknob_sx * L_uknob_br) * 0.25) - (((L_uknob_sy * L_uknob_k) * 0.6) * g_usc))), ((L_uknob_cy + ((L_uknob_sy * L_uknob_br) * 0.25)) + (((L_uknob_sx * L_uknob_k) * 0.6) * g_usc)), (L_uknob_cx + (((L_uknob_sx * L_uknob_br) * 0.85) - (((L_uknob_sy * L_uknob_k) * 0.6) * g_usc))), ((L_uknob_cy + ((L_uknob_sy * L_uknob_br) * 0.85)) + (((L_uknob_sx * L_uknob_k) * 0.6) * g_usc)), 1.0})), (L_uknob_k += 1.0))); } return 0.0; }()), (void)(gfx_setfont({2.0})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utext(L_uknob_val, L_uknob_cx, ((L_uknob_cy + L_uknob_rad) + (5.0 * g_usc)))), (B(F_uinc(L_uknob_cx, L_uknob_cy, (L_uknob_rad + (8.0 * g_usc)))) ? (double)(g_uhov = L_uknob_id) : 0.0));
+double Gen::F_uknob(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
+  L_uknob_id = p0; L_uknob_cx = p1; L_uknob_cy = p2; L_uknob_rad = p3; L_uknob_f = p4; L_uknob_label = p5; L_uknob_val = p6;
+  return ((void)(ASG(L_uknob_hot, (((EQ(g_uhov, L_uknob_id) || EQ(g_udrag, L_uknob_id)) || (EQ(L_uknob_id, 1.0) && EQ(g_udrag, 2.0))) ? 1.0 : 0.0))), (void)(gfx_setfont({7.0})), (void)(F_ucol(g_ucmuted, 1.0)), (void)(F_utc(L_uknob_label, L_uknob_cx, g_ulby)), (void)(F_ucol((B(L_uknob_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), 2.356, (3.0 * g_usc))), (void)(((L_uknob_f > 0.002) ? (double)((void)(F_ucol(g_ucacc, 1.0)), F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), ((-2.356) + (4.712 * L_uknob_f)), (3.0 * g_usc))) : 0.0)), (void)(ASG(L_uknob_ang, ((-2.356) + (4.712 * L_uknob_f)))), (void)(F_ucol(g_uctext, 1.0)), (void)(F_uquad(L_uknob_cx, L_uknob_cy, (L_uknob_cx + (rt_sin(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (L_uknob_cy - (rt_cos(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (1.6 * g_usc))), (void)(gfx_setfont({13.0})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_uknob_val, L_uknob_cx, g_unty)), (B(F_uinc(L_uknob_cx, L_uknob_cy, (L_uknob_rad + (8.0 * g_usc)))) ? (double)(g_uhov = L_uknob_id) : 0.0));
+}
+
+double Gen::F_ulc(double p0, double p1, double p2) {
+  L_ulc_str = p0; L_ulc_x = p1; L_ulc_cy = p2;
+  return ((void)(gfx_measurestr(L_ulc_str, L_ulc_tw, L_ulc_th)), (void)(ASG(v_gfx_x, std::floor((L_ulc_x + 0.5)))), (void)(ASG(v_gfx_y, std::floor(((L_ulc_cy - (L_ulc_th / 2.0)) + 0.5)))), gfx_drawstr({L_ulc_str}));
 }
 
 double Gen::F_ulogo(double p0, double p1) {
@@ -103,12 +193,22 @@ double Gen::F_ulogo(double p0, double p1) {
 
 double Gen::F_umap(double p0) {
   L_umap_v = p0;
-  return (B(g_uview) ? (double)std::floor(((g_ugy + g_upt) + (((g_ugh - g_upt) - g_upd) * rt_min(1.0, rt_max(0.0, ((-L_umap_v) / g_urng)))))) : (double)std::floor(((g_ugy + g_upd) + ((g_ugh - (2.0 * g_upd)) * ((1.0 - L_umap_v) / 2.0)))));
+  return (B(g_uview) ? (double)std::floor(((g_ugy + g_upt) + ((g_ugh - g_upt) * rt_min(1.0, rt_max(0.0, ((-L_umap_v) / g_urng)))))) : (double)std::floor((g_ugy + (g_ugh * ((1.0 - L_umap_v) / 2.0)))));
 }
 
-double Gen::F_uright(double p0, double p1, double p2) {
-  L_uright_str = p0; L_uright_rx = p1; L_uright_ty = p2;
-  return ((void)(gfx_measurestr(L_uright_str, L_uright_tw, L_uright_th)), (void)(ASG(v_gfx_x, std::floor((L_uright_rx - L_uright_tw)))), (void)(ASG(v_gfx_y, std::floor(L_uright_ty))), gfx_drawstr({L_uright_str}));
+double Gen::F_umix(double p0, double p1, double p2) {
+  L_umix_c1 = p0; L_umix_c2 = p1; L_umix_t = p2;
+  return ((void)(ASG(L_umix_t, rt_max(0.0, rt_min(1.0, L_umix_t)))), (((std::floor((((rt_and(rt_shr(L_umix_c1, 16.0), 255.0) * (1.0 - L_umix_t)) + (rt_and(rt_shr(L_umix_c2, 16.0), 255.0) * L_umix_t)) + 0.5)) * 65536.0) + (std::floor((((rt_and(rt_shr(L_umix_c1, 8.0), 255.0) * (1.0 - L_umix_t)) + (rt_and(rt_shr(L_umix_c2, 8.0), 255.0) * L_umix_t)) + 0.5)) * 256.0)) + std::floor((((rt_and(L_umix_c1, 255.0) * (1.0 - L_umix_t)) + (rt_and(L_umix_c2, 255.0) * L_umix_t)) + 0.5))));
+}
+
+double Gen::F_uquad(double p0, double p1, double p2, double p3, double p4) {
+  L_uquad_x1 = p0; L_uquad_y1 = p1; L_uquad_x2 = p2; L_uquad_y2 = p3; L_uquad_w = p4;
+  return ((void)(ASG(L_uquad_dx, (L_uquad_x2 - L_uquad_x1))), (void)(ASG(L_uquad_dy, (L_uquad_y2 - L_uquad_y1))), (void)(ASG(L_uquad_l, rt_max(0.0001, rt_sqrt(((L_uquad_dx * L_uquad_dx) + (L_uquad_dy * L_uquad_dy)))))), (void)(ASG(L_uquad_dx, ((L_uquad_dx / L_uquad_l) * (L_uquad_w / 2.0)))), (void)(ASG(L_uquad_dy, ((L_uquad_dy / L_uquad_l) * (L_uquad_w / 2.0)))), gfx_triangle({(L_uquad_x1 - L_uquad_dy), (L_uquad_y1 + L_uquad_dx), (L_uquad_x2 - L_uquad_dy), (L_uquad_y2 + L_uquad_dx), (L_uquad_x2 + L_uquad_dy), (L_uquad_y2 - L_uquad_dx), (L_uquad_x1 + L_uquad_dy), (L_uquad_y1 - L_uquad_dx)}));
+}
+
+double Gen::F_urc(double p0, double p1, double p2) {
+  L_urc_str = p0; L_urc_rx = p1; L_urc_cy = p2;
+  return ((void)(gfx_measurestr(L_urc_str, L_urc_tw, L_urc_th)), (void)(ASG(v_gfx_x, std::floor(((L_urc_rx - L_urc_tw) + 0.5)))), (void)(ASG(v_gfx_y, std::floor(((L_urc_cy - (L_urc_th / 2.0)) + 0.5)))), gfx_drawstr({L_urc_str}));
 }
 
 double Gen::F_urr(double p0, double p1, double p2, double p3, double p4, double p5) {
@@ -126,13 +226,18 @@ double Gen::F_usign(double p0, double p1) {
   return ((std::fabs(L_usign_v) < 0.005) ? (double)sprintf({L_usign_dst, 10003.0}) : (double)((L_usign_v > 0.0) ? (double)sprintf({L_usign_dst, 10004.0, L_usign_v}) : (double)sprintf({L_usign_dst, 10005.0, (-L_usign_v)})));
 }
 
-double Gen::F_utab(double p0, double p1, double p2, double p3, double p4) {
-  L_utab_x = p0; L_utab_w = p1; L_utab_on = p2; L_utab_hot = p3; L_utab_str = p4;
-  return ((void)(ASG(L_utab_bot, std::floor((50.0 * g_usc)))), (void)(ASG(L_utab_r, std::floor((6.0 * g_usc)))), (void)(ASG(L_utab_b, rt_max(1.0, std::floor((1.4 * g_usc))))), (void)((B(L_utab_on) ? (double)((void)(ASG(L_utab_ty, std::floor((23.0 * g_usc)))), (void)(F_ucol(g_ucacto, 1.0)), (void)(F_urr(L_utab_x, L_utab_ty, L_utab_w, (((L_utab_bot - L_utab_ty) + L_utab_r) + 2.0), L_utab_r, 1.0)), (void)(F_ucol(g_ucbg, 1.0)), (void)(F_urr((L_utab_x + L_utab_b), (L_utab_ty + L_utab_b), (L_utab_w - (2.0 * L_utab_b)), (((L_utab_bot - L_utab_ty) + L_utab_r) + 2.0), (L_utab_r - L_utab_b), 1.0)), F_ucol(g_uctext, 1.0)) : (double)((void)(ASG(L_utab_ty, std::floor((26.0 * g_usc)))), (void)(F_ucol((B(L_utab_hot) ? g_uchair : g_ucsurf), 1.0)), (void)(F_urr(L_utab_x, L_utab_ty, L_utab_w, (((L_utab_bot - L_utab_ty) + L_utab_r) + 2.0), L_utab_r, 1.0)), F_ucol((B(L_utab_hot) ? g_uctext : g_ucmuted), 1.0)))), F_utext(L_utab_str, (L_utab_x + (L_utab_w / 2.0)), ((B(L_utab_on) ? (double)28.0 : (double)30.0) * g_usc)));
+double Gen::F_utc(double p0, double p1, double p2) {
+  L_utc_str = p0; L_utc_cx = p1; L_utc_cy = p2;
+  return ((void)(gfx_measurestr(L_utc_str, L_utc_tw, L_utc_th)), (void)(ASG(v_gfx_x, std::floor(((L_utc_cx - (L_utc_tw / 2.0)) + 0.5)))), (void)(ASG(v_gfx_y, std::floor(((L_utc_cy - (L_utc_th / 2.0)) + 0.5)))), gfx_drawstr({L_utc_str}));
 }
 
-double Gen::F_utext(double p0, double p1, double p2) {
-  L_utext_str = p0; L_utext_cx = p1; L_utext_ty = p2;
-  return ((void)(gfx_measurestr(L_utext_str, L_utext_tw, L_utext_th)), (void)(ASG(v_gfx_x, std::floor((L_utext_cx - (L_utext_tw / 2.0))))), (void)(ASG(v_gfx_y, std::floor(L_utext_ty))), gfx_drawstr({L_utext_str}));
+double Gen::F_ux(double p0) {
+  L_ux_v = p0;
+  return (g_uox + (L_ux_v * g_usc));
+}
+
+double Gen::F_uy(double p0) {
+  L_uy_v = p0;
+  return (L_uy_v * g_usc);
 }
 }

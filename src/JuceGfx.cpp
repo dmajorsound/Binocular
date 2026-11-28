@@ -1,3 +1,4 @@
+#include "BinaryData.h"
 #include "JuceGfx.h"
 
 namespace rs {
@@ -147,6 +148,33 @@ void JuceGfx::gradrect(const double* p, int n) {
     }
 }
 
+// ---- embedded typefaces: "Mulish", "Mulish SemiBold", "Mulish Bold", "Red Hat Mono", "Red Hat Mono SemiBold"
+juce::Typeface::Ptr JuceGfx::embeddedTypeface(const std::string& name) {
+    struct Entry { const char* name; const char* data; int size; };
+    static const Entry table[] = {
+        { "Mulish", BinaryData::MulishRegular_ttf, BinaryData::MulishRegular_ttfSize },
+        { "Mulish SemiBold", BinaryData::MulishSemiBold_ttf, BinaryData::MulishSemiBold_ttfSize },
+        { "Mulish Bold", BinaryData::MulishBold_ttf, BinaryData::MulishBold_ttfSize },
+        { "Red Hat Mono", BinaryData::RedHatMonoMedium_ttf, BinaryData::RedHatMonoMedium_ttfSize },
+        { "Red Hat Mono SemiBold", BinaryData::RedHatMonoSemiBold_ttf, BinaryData::RedHatMonoSemiBold_ttfSize },
+    };
+    static std::unordered_map<std::string, juce::Typeface::Ptr> loaded;
+    auto it = loaded.find(name);
+    if (it != loaded.end()) return it->second;
+    for (const auto& e : table)
+        if (name == e.name) {
+            auto tf = juce::Typeface::createSystemTypefaceFor(e.data, (size_t)e.size);
+            loaded.emplace(name, tf);
+            return tf;
+        }
+    return nullptr;
+}
+
+// JUCE sizes a font by ascent + descent; REAPER-style sizes here mean the em size
+float JuceGfx::embeddedHeightScale(const std::string& name) {
+    return name.rfind("Red Hat Mono", 0) == 0 ? 1.32f : 1.255f;
+}
+
 const juce::Font& JuceGfx::font() {
     if (!fonts[curFont].set) {
         fonts[curFont].font = juce::Font(juce::FontOptions("Arial", 13.0f, juce::Font::plain));
@@ -182,8 +210,14 @@ void JuceGfx::setfont(int idx, const std::string* face, double sz, int flags) {
         const float h = (float)juce::jmax(1.0, sz);
         std::string key = fname + "|" + std::to_string(h) + "|" + std::to_string(style);
         auto it = fontCache.find(key);
-        if (it == fontCache.end())
-            it = fontCache.emplace(key, juce::Font(juce::FontOptions(juce::String::fromUTF8(fname.c_str()), h, style))).first;
+        if (it == fontCache.end()) {
+            // the plug-in's own typefaces (embedded, the same on every computer); the size is the em size, as in REAPER
+            juce::Typeface::Ptr tf = embeddedTypeface(fname);
+            if (tf != nullptr)
+                it = fontCache.emplace(key, juce::Font(juce::FontOptions(tf).withHeight(h * embeddedHeightScale(fname)))).first;
+            else
+                it = fontCache.emplace(key, juce::Font(juce::FontOptions(juce::String::fromUTF8(fname.c_str()), h, style))).first;
+        }
         fonts[idx].font = it->second;
         fonts[idx].key = key;
         fonts[idx].set = true;

@@ -99,14 +99,15 @@
    "idx": 8,
    "default": 0.0,
    "lo": 0.0,
-   "hi": 2.0,
+   "hi": 3.0,
    "step": 1.0,
    "label": "View",
    "hidden": true,
    "enums": [
     "Correlation",
     "Mono loss",
-    "Goniometer"
+    "Goniometer",
+    "Loudness"
    ]
   },
   {
@@ -122,6 +123,55 @@
     "48 dB",
     "96 dB"
    ]
+  },
+  {
+   "idx": 10,
+   "default": 0.0,
+   "lo": 0.0,
+   "hi": 5.0,
+   "step": 1.0,
+   "label": "Loudness target",
+   "hidden": true,
+   "enums": [
+    "EBU R128",
+    "Netflix",
+    "Spotify",
+    "YouTube",
+    "Apple Music",
+    "Tidal"
+   ]
+  },
+  {
+   "idx": 11,
+   "default": 1.0,
+   "lo": 0.0,
+   "hi": 2.0,
+   "step": 1.0,
+   "label": "Measure",
+   "hidden": true,
+   "enums": [
+    "Always",
+    "Playback",
+    "Timecode"
+   ]
+  },
+  {
+   "idx": 12,
+   "default": 1.0,
+   "lo": 0.0,
+   "hi": 6.0,
+   "step": 1.0,
+   "label": "Radar turn",
+   "hidden": true,
+   "enums": [
+    "1 min",
+    "5 min",
+    "15 min",
+    "30 min",
+    "1 h",
+    "2 h",
+    "5 h"
+   ]
   }
  ],
  "strings": {
@@ -131,19 +181,23 @@
   "#urs": 90003,
   "#ugt": 90004,
   "#ugv": 90005,
-  "#utot": 90006,
-  "#uv1": 90007,
-  "#uv3": 90008,
-  "#uo1": 90009,
-  "#uo2": 90010,
-  "#uupv": 90011,
-  "#uupd": 90012,
-  "#uupt": 90013,
-  "#uq0": 90014,
-  "#uq1": 90015,
-  "#uq2": 90016,
-  "#uq3": 90017,
-  "#uq4": 90018,
-  "#ust": 90019
+  "#ultc": 90006,
+  "#lpn": 90007,
+  "#lh": 90008,
+  "#ld": 90009,
+  "#utot": 90010,
+  "#uv1": 90011,
+  "#uv3": 90012,
+  "#uo1": 90013,
+  "#uo2": 90014,
+  "#uupv": 90015,
+  "#uupd": 90016,
+  "#uupt": 90017,
+  "#uq0": 90018,
+  "#uq1": 90019,
+  "#uq2": 90020,
+  "#uq3": 90021,
+  "#uq4": 90022,
+  "#ust": 90023
  }
 }
