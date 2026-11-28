@@ -22,7 +22,13 @@ public:
     void focusGained(FocusChangeType) override { gfx.focused = true; }
     void focusLost(FocusChangeType) override { gfx.focused = false; }
 
+public:
+    std::unique_ptr<juce::FileChooser> chooser;   // "Download to:" in the update menu
+
 private:
+    void updateClick();
+    void updateMenu();
+
     void timerCallback() override;
     void mouse(const juce::MouseEvent& e, bool up = false);
     double scale() const;

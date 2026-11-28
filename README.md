@@ -1,4 +1,4 @@
-# Binocular 1.0.9 – VST3 / AU / CLAP
+# Binocular 1.1.0 – VST3 / AU / CLAP
 
 Multiband correlation meter and goniometer by dmajorsound (dmajorsound.com) as VST3, CLAP and (macOS) AU.
 The audio passes through untouched, no latency.
@@ -8,12 +8,12 @@ the plug-in is generated from (see below); it is not a supported product on its 
 
 ## Install on the Mac (no programming needed)
 
-**Installer:** on GitHub, open *Releases* and download `Binocular-1.0.9-mac.dmg` (Mac) or
-`Binocular_1.0.9_installer_win64.exe` (Windows). On the Mac, open the .dmg and follow the three steps in its window
+**Installer:** on GitHub, open *Releases* and download `Binocular-1.1.0-mac.dmg` (Mac) or
+`Binocular-1.1.0-win64.exe` (Windows). On the Mac, open the .dmg and follow the three steps in its window
 (Install, then "Blocked? Open Privacy & Security" if macOS refuses the unsigned installer, then Install again). It installs
 VST3, CLAP and (Mac) AU into the common plug-in folders. "Uninstall Binocular" in the .dmg removes it again.
 
-**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.0.9_mac`. Unzip,
+**Download without installer:** on GitHub, open *Actions* → the newest green run → *Artifacts* → `Binocular_1.1.0_mac`. Unzip,
 then copy `Binocular.vst3` into `~/Library/Audio/Plug-Ins/VST3/` and `Binocular.component` into
 `~/Library/Audio/Plug-Ins/Components/`. In REAPER: *Options → Preferences → Plug-ins → VST → Re-scan*.
 

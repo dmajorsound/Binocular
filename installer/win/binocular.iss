@@ -2,7 +2,7 @@
 [Setup]
 AppId={{6B1E3C2A-8D4F-4B7A-9E21-B10C0A1A1000}
 AppName=Binocular
-AppVersion=1.0.9
+AppVersion=1.1.0
 AppPublisher=dmajorsound
 AppPublisherURL=https://dmajorsound.com
 DefaultDirName={commoncf64}\VST3
@@ -10,7 +10,7 @@ DisableDirPage=yes
 DirExistsWarning=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
-OutputBaseFilename=Binocular_1.0.9_installer_win64
+OutputBaseFilename=Binocular-1.1.0-win64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 Uninstallable=yes

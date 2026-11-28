@@ -79,8 +79,18 @@ void BinocularEditor::timerCallback() {
     auto* g = proc.engine.gen.get();
     if (g->v_gfx_ext_retina > 0) g->v_gfx_ext_retina = s;
     g->v_mouse_cap = liveCap | latchedButtons;   // a press seen since the last frame counts for this frame
-    g->g_updv = bn::updateNewerVersion();          // "Update x.y.z" in the footer once GitHub has a newer release
-    if (g->g_updclick != 0) { g->g_updclick = 0; bn::openWebPage(bn::updateUrl()); }
+    // a newer Binocular: the note in the footer (as in OLAAF 0.8.7)
+    g->g_updv = bn::updateNewerVersion();
+    {
+        double prog = 0;
+        g->g_upst = bn::updateDownloadState(&prog, nullptr, nullptr);
+        g->g_uppr = prog;
+        g->g_upas = bn::updateAssetUrl().empty() ? 0 : 1;
+        g->g_uperr = bn::updateDownloadError();
+        bn::updatePoll();   // "download and install": opens the installer once it is there
+    }
+    if (g->g_updclick != 0) { g->g_updclick = 0; updateClick(); }
+    if (g->g_updrclick != 0) { g->g_updrclick = 0; updateMenu(); }
     if (g->g_umanual != 0) { g->g_umanual = 0; bn::openWebPage("https://dmajorsound.com/software/binocular/manual.html"); }
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     gfx.beginFrame(w, h);
@@ -168,4 +178,55 @@ bool BinocularEditor::keyPressed(const juce::KeyPress& k) {
     }
     if (c) { gfx.keyQueue.push_back(c); if (gfx.keyQueue.size() > 64) gfx.keyQueue.pop_front(); }
     return true;   // all keys go to the plugin while it has the focus
+}
+
+// a click on the update note: download and install (or install what is there, or try again);
+// without an installer for this system: the release page
+void BinocularEditor::updateClick() {
+    if (bn::updateNewerVersion() <= 0) return;
+    std::string path;
+    const int dl = bn::updateDownloadState(nullptr, &path, nullptr);
+    if (bn::updateAssetUrl().empty()) bn::openWebPage(bn::updateUrl());
+    else if (dl == 2) bn::openInstaller(path);
+    else if (dl != 1) bn::updateDownloadStart(true);
+}
+
+// a right-click on the update note: download and install, download only, where to, what's new
+void BinocularEditor::updateMenu() {
+    if (bn::updateNewerVersion() <= 0) return;
+    std::string path;
+    const int dl = bn::updateDownloadState(nullptr, &path, nullptr);
+    const bool direct = !bn::updateAssetUrl().empty();
+    const juce::String dir(bn::updateFolder());
+    const juce::String shortDir = juce::File(dir).getFileName().isNotEmpty() ? juce::File(dir).getFileName() : dir;
+    juce::PopupMenu m;
+    if (dl == 2) {
+        m.addItem(3, "Install now");
+       #if JUCE_MAC
+        m.addItem(4, "Show in Finder");
+       #else
+        m.addItem(4, "Show in Explorer");
+       #endif
+    } else {
+        m.addItem(1, "Download and install", direct && dl != 1);
+        m.addItem(2, "Download only (install later)", direct && dl != 1);
+    }
+    m.addSeparator();
+    m.addItem(5, "Download to: " + shortDir + juce::String::fromUTF8(" \xe2\x80\xa6"), dl != 1);
+    m.addItem(6, "What's new (release page)");
+    juce::Component::SafePointer<BinocularEditor> safe(this);
+    m.showMenuAsync(juce::PopupMenu::Options().withMousePosition(), [safe, path, dir](int cmd) {
+        if (cmd == 1 || cmd == 2) bn::updateDownloadStart(cmd == 1);
+        else if (cmd == 3) bn::openInstaller(path);
+        else if (cmd == 4) bn::revealInFileBrowser(path);
+        else if (cmd == 6) bn::openWebPage(bn::updateUrl());
+        else if (cmd == 5 && safe != nullptr) {
+            safe->chooser = std::make_unique<juce::FileChooser>("Binocular: choose where updates are downloaded to", juce::File(dir));
+            safe->chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                                       [](const juce::FileChooser& fc) {
+                                           const juce::File f = fc.getResult();
+                                           if (f.isDirectory()) bn::setUpdateFolder(f.getFullPathName().toStdString(), true);
+                                       });
+        }
+    });
 }

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Universal (Apple Silicon + Intel). For a faster Intel-only build: -DCMAKE_OSX_ARCHITECTURES=x86_64
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
-project(Binocular VERSION 1.0.9 LANGUAGES C CXX)
+project(Binocular VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,7 +24,7 @@ juce_add_plugin(Binocular
   PLUGIN_CODE Bnoc
   FORMATS ${BN_FORMATS}
   PRODUCT_NAME "Binocular"
-  VERSION 1.0.9
+  VERSION 1.1.0
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT FALSE
   NEEDS_MIDI_OUTPUT FALSE
@@ -68,4 +68,14 @@ if(EXISTS "${CLAP_JUCE_DIR}/CMakeLists.txt")
   clap_juce_extensions_plugin(TARGET Binocular
     CLAP_ID "com.dmajorsound.binocular"
     CLAP_FEATURES audio-effect analyzer stereo)
+endif()
+
+# self-test of the update download (run by the GitHub build before anything is released)
+option(BN_UPDATE_TEST "Build the update download self-test" OFF)
+if(BN_UPDATE_TEST)
+  juce_add_console_app(BinocularUpdateTest PRODUCT_NAME "binocular_update_test")
+  target_sources(BinocularUpdateTest PRIVATE tests/update_download.cpp src/UpdateCheck.cpp)
+  target_compile_definitions(BinocularUpdateTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
+  target_link_libraries(BinocularUpdateTest PRIVATE juce::juce_core juce::juce_data_structures juce::juce_events
+                        PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 endif()

@@ -39,8 +39,13 @@ jobs:
           git -C ../clap-juce-extensions submodule update --init --recursive --depth 1
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-          cmake --build build --config Release --target Binocular_VST3 Binocular_AU Binocular_CLAP --parallel 4
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBN_UPDATE_TEST=ON
+          cmake --build build --config Release --target Binocular_VST3 Binocular_AU Binocular_CLAP BinocularUpdateTest --parallel 4
+      - name: Self-test - the update download
+        run: |
+          # the update note's own code downloads an already published installer (a fixed version, not this one)
+          build/BinocularUpdateTest_artefacts/Release/binocular_update_test \
+            https://github.com/dmajorsound/Binocular/releases/download/v1.0.9/Binocular-1.0.9-mac.dmg "$RUNNER_TEMP"
       - name: Strip, sign (ad hoc) and pack
         run: |
           mkdir -p out
@@ -56,9 +61,9 @@ jobs:
           codesign --force --deep -s - out/Binocular.vst3
           codesign --force --deep -s - out/Binocular.component
           codesign --force --deep -s - out/Binocular.clap
-          ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.0.9_mac_VST3.zip
-          ditto -c -k --keepParent out/Binocular.component Binocular_1.0.9_mac_AU.zip
-          ditto -c -k --keepParent out/Binocular.clap Binocular_1.0.9_mac_CLAP.zip
+          ditto -c -k --keepParent out/Binocular.vst3 Binocular_1.1.0_mac_VST3.zip
+          ditto -c -k --keepParent out/Binocular.component Binocular_1.1.0_mac_AU.zip
+          ditto -c -k --keepParent out/Binocular.clap Binocular_1.1.0_mac_CLAP.zip
       - name: Installer (.pkg)
         run: |
           mkdir -p ui
@@ -68,7 +73,7 @@ jobs:
             pkgbuild --analyze --root payload comp.plist
             plutil -replace 0.BundleIsRelocatable -bool NO comp.plist
             pkgbuild --root payload --component-plist comp.plist --install-location "/Library/Audio/Plug-Ins/$2" \
-              --identifier "com.dmajorsound.binocular.$3" --version 1.0.9 "binocular-$3.pkg"
+              --identifier "com.dmajorsound.binocular.$3" --version 1.1.0 "binocular-$3.pkg"
           }
           mk Binocular.vst3 VST3 vst3
           mk Binocular.component Components au
@@ -77,19 +82,19 @@ jobs:
           tiffutil -cathidpicheck installer/mac_ui/background.png installer/mac_ui/background@2x.png -out ui/background.tiff
           tiffutil -cathidpicheck installer/mac_ui/background-darkAqua.png installer/mac_ui/background-darkAqua@2x.png -out ui/background-darkAqua.tiff
           productbuild --distribution installer/mac_ui/distribution.xml --resources ui \
-            --package-path . Binocular_1.0.9_installer_mac.pkg
-          ls -la Binocular_1.0.9_installer_mac.pkg
+            --package-path . Binocular_1.1.0_installer_mac.pkg
+          ls -la Binocular_1.1.0_installer_mac.pkg
           # uninstaller: an empty package whose script removes the plug-in in every format
           pkgbuild --nopayload --scripts installer/mac_uninstall --identifier com.dmajorsound.binocular.uninstall \
-            --version 1.0.9 binocular-uninstall-component.pkg
+            --version 1.1.0 binocular-uninstall-component.pkg
           cp installer/mac_ui/uninstall.html ui/
           productbuild --distribution installer/mac_ui/uninstall.xml --resources ui \
-            --package-path . Binocular-1.0.9-mac-uninstall.pkg
+            --package-path . Binocular-1.1.0-mac-uninstall.pkg
       - name: Disk image (.dmg) with the installer and the Privacy & Security helper
         run: |
           # macOS blocks the unsigned installer before it runs, so it can't help itself: next to it lies a
           # web location that opens System Settings > Privacy & Security, where "Open Anyway" lifts the block
-          V=1.0.9
+          V=1.1.0
           mkdir -p dmg/.background
           cp Binocular_${V}_installer_mac.pkg "dmg/Install Binocular.pkg"
           cp Binocular-$V-mac-uninstall.pkg "dmg/Uninstall Binocular.pkg"
@@ -132,14 +137,14 @@ jobs:
           ls -la Binocular-$V-mac.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: Binocular_1.0.9_mac
+          name: Binocular_1.1.0_mac
           path: |
-            Binocular-1.0.9-mac.dmg
-            Binocular-1.0.9-mac-uninstall.pkg
-            Binocular_1.0.9_installer_mac.pkg
-            Binocular_1.0.9_mac_VST3.zip
-            Binocular_1.0.9_mac_AU.zip
-            Binocular_1.0.9_mac_CLAP.zip
+            Binocular-1.1.0-mac.dmg
+            Binocular-1.1.0-mac-uninstall.pkg
+            Binocular_1.1.0_installer_mac.pkg
+            Binocular_1.1.0_mac_VST3.zip
+            Binocular_1.1.0_mac_AU.zip
+            Binocular_1.1.0_mac_CLAP.zip
 
   windows:
     runs-on: windows-latest
@@ -162,8 +167,15 @@ jobs:
           git -C ../clap-juce-extensions submodule update --init --recursive --depth 1
       - name: Build
         run: |
-          cmake -S . -B build -A x64
-          cmake --build build --config Release --target Binocular_VST3 Binocular_CLAP --parallel 4
+          cmake -S . -B build -A x64 -DBN_UPDATE_TEST=ON
+          cmake --build build --config Release --target Binocular_VST3 Binocular_CLAP BinocularUpdateTest --parallel 4
+      - name: Self-test - the update download
+        shell: pwsh
+        run: |
+          # the update note's own code downloads an already published installer (a fixed version, not this one)
+          & build\BinocularUpdateTest_artefacts\Release\binocular_update_test.exe `
+            https://github.com/dmajorsound/Binocular/releases/download/v1.0.9/Binocular_1.0.9_installer_win64.exe "$env:RUNNER_TEMP"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Installer (.exe)
         shell: pwsh
         run: |
@@ -174,10 +186,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: Binocular_1.0.9_windows
+          name: Binocular_1.1.0_windows
           path: |
-            installer/win/Output/Binocular_1.0.9_installer_win64.exe
-            installer/win/Output/Binocular_1.0.9_uninstaller_win64.exe
+            installer/win/Output/Binocular-1.1.0-win64.exe
+            installer/win/Output/Binocular-1.1.0-win64-uninstall.exe
             build/Binocular_artefacts/Release/VST3/Binocular.vst3
             build/Binocular_artefacts/Release/CLAP/Binocular.clap
 
@@ -227,12 +239,14 @@ jobs:
 
           ### Download
           - **Mac** (Apple Silicon and Intel): `Binocular-VERSION-mac.dmg` below (installer, uninstaller and a helper for the macOS block)
-          - **Windows** (64-bit): `Binocular_VERSION_installer_win64.exe` below (uninstaller: `Binocular_VERSION_uninstaller_win64.exe`)
+          - **Windows** (64-bit): `Binocular-VERSION-win64.exe` below (uninstaller: `Binocular-VERSION-win64-uninstall.exe`)
 
           ### Install
           1. Quit your DAW.
           2. Open the installer and click through. It installs VST3, CLAP and (Mac) Audio Unit into the common plug-in folders.
           3. Start your DAW. If Binocular does not show up, rescan your plug-ins in your DAW.
+
+          From 1.1.0 on, Binocular gets its updates itself: when a newer version is out, a red note appears in the footer. Click it to download and install (quit your DAW before you click Install); right-click for download only, the download folder and what's new.
 
           > [!CAUTION]
           > **Mac: "Install Binocular can't be opened" / "Apple could not verify…"**
@@ -253,12 +267,12 @@ jobs:
 
           ### Uninstall
           - **Mac:** quit your DAW, open **Uninstall Binocular** in the .dmg (or `Binocular-VERSION-mac-uninstall.pkg`) and click through (same Open Anyway as above if macOS complains).
-          - **Windows:** quit your DAW, open `Binocular_VERSION_uninstaller_win64.exe` and click through (same More info → Run anyway as above if SmartScreen complains). Or **Settings → Apps → Installed apps → Binocular → Uninstall**.
+          - **Windows:** quit your DAW, open `Binocular-VERSION-win64-uninstall.exe` and click through (same More info → Run anyway as above if SmartScreen complains). Or **Settings → Apps → Installed apps → Binocular → Uninstall**.
 
           V VERSION, developed with AI assistance · [dmajorsound.com](https://dmajorsound.com)
           NOTES
           sed -i "s/VERSION/${TAG#v}/g" notes.txt
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Binocular ${TAG#v}" \
             --notes-file notes.txt \
-            dl/Binocular_1.0.9_mac/Binocular-*-mac.dmg dl/Binocular_1.0.9_mac/Binocular-*-mac-uninstall.pkg \
-            dl/Binocular_1.0.9_windows/installer/win/Output/*.exe
+            dl/Binocular_1.1.0_mac/Binocular-*-mac.dmg dl/Binocular_1.1.0_mac/Binocular-*-mac-uninstall.pkg \
+            dl/Binocular_1.1.0_windows/installer/win/Output/*.exe
