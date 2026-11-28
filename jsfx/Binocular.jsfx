@@ -1283,7 +1283,7 @@ uloud ? (
       lrm = (lrr + lrn)/2;
       lL = -0.691 + 10*log10(m_wde[uk]/m_wdn[uk]);
       lage = ((lkc - uk + 360) % 360)/360;
-      ucol(umix(ucP, lcolr(lL, lt, ltl), 1 - 0.62*lage), 1);
+      ucol(umix(ucP, lcolr(lL, lt, ltl), 1 - (udark ? 0.62 : 0.22)*lage), 1);   // light: older parts stay clearly green, blue, red
       la1 = uk*0.0174533; lam = (uk + 0.5)*0.0174533; la2 = (uk + 1)*0.0174533; la3 = (uk + 1.3)*0.0174533;
       lre = lrm + (lrn - lrm)*0.6;
       gfx_triangle(lcx + sin(la1)*lr0, lcy - cos(la1)*lr0, lcx + sin(la1)*lrl, lcy - cos(la1)*lrl,
