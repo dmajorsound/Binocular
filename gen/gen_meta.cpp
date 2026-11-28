@@ -14,7 +14,7 @@ const SliderInfo kSliders[] = {
   {9, 1.0, 0.0, 2.0, 1.0, "Range", true, "24 dB|48 dB|96 dB"},
   {10, 0.0, 0.0, 5.0, 1.0, "Loudness target", true, "EBU R128|Netflix|Spotify|YouTube|Apple Music|Tidal"},
   {11, 1.0, 0.0, 2.0, 1.0, "Measure", true, "Always|Playback|Timecode"},
-  {12, 1.0, 0.0, 6.0, 1.0, "Radar turn", true, "1 min|5 min|15 min|30 min|1 h|2 h|5 h"},
+  {12, 1.0, 0.0, 6.0, 1.0, "History span", true, "1 min|5 min|15 min|30 min|1 h|2 h|5 h"},
 };
 const int kNumSliders = 12;
 }

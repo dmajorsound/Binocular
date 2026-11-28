@@ -246,7 +246,7 @@ jobs:
           <h2 align="center">Binocular – Correlation &amp; Loudness Meter</h2>
           <p align="center"><i>Mmm…etering!</i></p>
 
-          Free multiband correlation meter, goniometer and loudness meter by dmajorsound. Shows phase problems per frequency band, mono loss, time offset and polarity between left and right (or against a sidechain), and loudness to EBU R128 / ITU-R BS.1770 with presets (EBU R128, Netflix, Spotify, YouTube, Apple Music, Tidal), a loudness radar and timecode measuring. The audio passes through untouched.
+          Free multiband correlation meter, goniometer and loudness meter by dmajorsound. Shows phase problems per frequency band, mono loss, time offset and polarity between left and right (or against a sidechain), and loudness to EBU R128 / ITU-R BS.1770 with presets (EBU R128, Netflix, Spotify, YouTube, Apple Music, Tidal), a loudness history graph, loudness and true peak meters and timecode measuring. The audio passes through untouched.
 
           ### Download
           - **Mac** (Apple Silicon and Intel): `Binocular-VERSION-mac.dmg` below (installer, uninstaller and a helper for the macOS block)

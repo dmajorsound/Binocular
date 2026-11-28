@@ -161,7 +161,7 @@
    "lo": 0.0,
    "hi": 6.0,
    "step": 1.0,
-   "label": "Radar turn",
+   "label": "History span",
    "hidden": true,
    "enums": [
     "1 min",

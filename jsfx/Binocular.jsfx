@@ -19,7 +19,7 @@ slider8:0<0,3,1{Correlation,Mono loss,Goniometer,Loudness}>-View
 slider9:1<0,2,1{24 dB,48 dB,96 dB}>-Range
 slider10:0<0,5,1{EBU R128,Netflix,Spotify,YouTube,Apple Music,Tidal}>-Loudness target
 slider11:1<0,2,1{Always,Playback,Timecode}>-Measure
-slider12:1<0,6,1{1 min,5 min,15 min,30 min,1 h,2 h,5 h}>-Radar turn
+slider12:1<0,6,1{1 min,5 min,15 min,30 min,1 h,2 h,5 h}>-History span
 // new sliders only at the end
 
 in_pin:Left
@@ -401,6 +401,12 @@ function lvcol(L, t, tol, p)
   L <= -70 ? ucDIM : abs(L - t) <= tol ? ucMINT : p < 1.5 ? ucRED : L > t ? ucWARN : ucBLUE;
 );
 
+// a loudness to its height in the history graph
+function lgmap(L)
+(
+  floor(lgy1 - lgh*max(0, min(1, (L - llo)/(lhi - llo))) + 0.5);
+);
+
 // layout units (680 x 520) to pixels
 function ux(v) ( uox + v*usc; );
 function uy(v) ( v*usc; );
@@ -441,7 +447,7 @@ function uknob(id, cx, cy, rad, f, label, val) local(hot, ang)
 (
   hot = uhov == id || udrag == id || (id == 1 && udrag == 2);
   gfx_setfont(7); ucol(ucMUTED, 1); utc(label, cx, ulby);
-  ucol(hot ? ucLINE : ucP2, 1); uarc(cx, cy, rad, -2.356, 2.356, 3*usc);
+  ucol(udark ? (hot ? ucLINE : ucP2) : (hot ? 0xC9DDEE : ucLINE), 1); uarc(cx, cy, rad, -2.356, 2.356, 3*usc);
   f > 0.002 ? ( ucol(ucACC, 1); uarc(cx, cy, rad, -2.356, -2.356 + 4.712*f, 3*usc); );
   ang = -2.356 + 4.712*f;
   ucol(ucTEXT, 1); uquad(cx, cy, cx + sin(ang)*(rad - 6*usc), cy - cos(ang)*(rad - 6*usc), 1.6*usc);
@@ -456,6 +462,13 @@ function umap(v)
         : floor(ugy + ugh*(1-v)/2);
 );
 
+// a filled box: in light mode white with a thin line around it
+function ubox(x, y, w, h, r)
+(
+  ucol(ucP2, 1); urr(x, y, w, h, r, 1);
+  !udark ? ( ucol(ucLINE, 1); urr(x, y, w, h, r, 0); );
+);
+
 // a button: switched on it is filled with the accent
 function ubtn(x, y, w, h, on, hot, str)
 (
@@ -463,7 +476,7 @@ function ubtn(x, y, w, h, on, hot, str)
     ucol(ucACC, 1); urr(x, y, w, h, 8*usc, 1);
     gfx_setfont(6); ucol(ucACCT, 1);
   ) : (
-    ucol(hot ? ucLINE : ucP2, 1); urr(x, y, w, h, 8*usc, 1);
+    ucol(hot ? ucHOV : ucP2, 1); urr(x, y, w, h, 8*usc, 1);
     ucol(ucLINE, 1); urr(x, y, w, h, 8*usc, 0);
     gfx_setfont(9); ucol(ucTEXT, 1);
   );
@@ -473,7 +486,7 @@ function ubtn(x, y, w, h, on, hot, str)
 // a dropdown: the setting and a small triangle
 function udrop(x, y, w, h, hot, str, fnt)
 (
-  ucol(hot ? ucLINE : ucP2, 1); urr(x, y, w, h, 8*usc, 1);
+  ucol(hot ? ucHOV : ucP2, 1); urr(x, y, w, h, 8*usc, 1);
   ucol(ucLINE, 1); urr(x, y, w, h, 8*usc, 0);
   gfx_setfont(fnt); ucol(ucTEXT, 1); utc(str, x + (w - 12*usc)/2, y + h/2);
   ucol(ucMUTED, 1);
@@ -560,17 +573,17 @@ ldec(#lg2, m_lg2, 1536);
 m_lme  = 1048576;      // per slot (5 hours of 100 ms): momentary block energy (0 = no block yet)
 m_lse  = 1228800;      //   short-term energy (0 = none yet)
 m_lhs  = 1409024;      //   1 = the slot holds a measurement
-m_lhi  = 1589248;      // radar history: momentary energy of every measured slot, in order (5 hours)
+m_lhi  = 1589248;      // history: momentary energy of every measured slot, in order (5 hours)
 m_hmc  = 1769472;      // histogram of the momentary blocks: counts
 m_hme  = 1770496;      //   energies
 m_hsc  = 1771520;      // histogram of the short-term values: counts
 m_hse  = 1772544;      //   energies
 m_lr30 = 1773568;      // the last 30 slot energies
-m_wde  = 1773632;      // radar: 360 wedges, energy sum
+m_wde  = 1773632;      // history graph: 360 steps, energy sum
 m_wdn  = 1774080;      //   number of slots in it
 m_tph  = 1774528;      // true peak: input history, left 16, right 16
 m_tpc  = 1774592;      //   polyphase interpolation filter, up to 4 phases x 12 taps
-m_wrr  = 1774656;      // radar drawing: the radius of every wedge (-1 = empty)
+m_wrr  = 1774656;      // history drawing: the height of every step (-1 = empty)
 lN = 180000;
 
 // K-weighting (shelf + high-pass): the BS.1770 filters re-derived for any sample rate (as libebur128 does;
@@ -640,7 +653,7 @@ function lstore(sid, em, es) local(i)
   lnsl += 1;
 );
 
-// radar: one turn in slots, by the Radar setting
+// history: the span in slots, by the History setting
 function lrspan()
 (
   slider12 < 0.5 ? 600 : slider12 < 1.5 ? 3000 : slider12 < 2.5 ? 9000 : slider12 < 3.5 ? 18000 :
@@ -657,7 +670,7 @@ function lradd(e) local(S, k)
   lht += 1;
 );
 
-// a new turn length: the wedges are rebuilt from the history
+// a new span: the steps are rebuilt from the history
 function lrbuild() local(S, n, j, k)
 (
   S = lrspan();
@@ -671,7 +684,7 @@ function lrbuild() local(S, n, j, k)
   lrsp = slider12;
 );
 
-// the slot that just ended: momentary (last 4 slots), short-term (last 30), into the timeline and the radar
+// the slot that just ended: momentary (last 4 slots), short-term (last 30), into the timeline and the history
 function lslot() local(e, i, n, em, es)
 (
   e = lsum/lcnt;
@@ -867,9 +880,12 @@ lmeas ? (
   );
   lsum += lzl*lzl + lzr*lzr; lcnt += 1;
   lvn += 1;
-  // true peak: the samples and the points between them
+);
+// true peak per side (the samples and the points between them): for the peak meters always while the meter runs,
+// into True peak max only while measuring
+mon ? (
   m_tph[ltpi] = spl0; m_tph[16 + ltpi] = spl1;
-  lpk = max(abs(spl0), abs(spl1));
+  lpl = abs(spl0); lpr = abs(spl1);
   tpo > 1 ? (
     tp_p = 0;
     loop(tpo,
@@ -879,12 +895,14 @@ lmeas ? (
         tp_l += tp_c*m_tph[tp_j]; tp_r += tp_c*m_tph[16 + tp_j];
         tp_k += 1;
       );
-      lpk = max(lpk, max(abs(tp_l), abs(tp_r)));
+      lpl = max(lpl, abs(tp_l)); lpr = max(lpr, abs(tp_r));
       tp_p += 1;
     );
   );
   ltpi = (ltpi + 1) & 15;
-  lpk > ltpk ? ltpk = lpk;
+  lpl > lpkl ? lpkl = lpl;              // the meters take these and set them back to 0
+  lpr > lpkr ? lpkr = lpr;
+  lmeas ? ( lpk = max(lpl, lpr); lpk > ltpk ? ltpk = lpk; );
 );
 lsmp += 1;
 
@@ -892,12 +910,13 @@ lsmp += 1;
 // ---- theme: calm panels, one accent for what is switched on, color only for signals
 udark = slider7 < 0.5;
 udark ? (
-  ucBG = 0x121418; ucP = 0x1C1F24; ucP2 = 0x262A30; ucLINE = 0x30343B; ucGRID = 0x24282E;
+  ucBG = 0x121418; ucP = 0x1C1F24; ucP2 = 0x262A30; ucLINE = 0x30343B; ucGRID = 0x24282E; ucHOV = 0x30343B;
   ucTEXT = 0xE8EAED; ucMUTED = 0x9AA0A8; ucDIM = 0x686E77;
   ucACC = 0x8CC8F2; ucACCT = 0x0F2638; ucACC2 = 0x2F5675; ucACC2T = 0xFFFFFF;
   ucMINT = 0x8FE3B0; ucBLUE = 0x8CC8F2; ucCORAL = 0xF59A6B; ucRED = 0xF06E6E; ucWARN = 0xF2B36B;
 ) : (
-  ucBG = 0xEEEFF1; ucP = 0xFAFAFB; ucP2 = 0xE8EAED; ucLINE = 0xDADDE1; ucGRID = 0xE4E6EA;
+  // light mode is white: every surface white, set apart by thin lines only; hover is a light accent tint
+  ucBG = 0xFFFFFF; ucP = 0xFFFFFF; ucP2 = 0xFFFFFF; ucLINE = 0xDFE3E8; ucGRID = 0xF0F2F5; ucHOV = 0xEAF4FC;
   ucTEXT = 0x1C1F24; ucMUTED = 0x626870; ucDIM = 0x969BA2;
   ucACC = 0x8CC8F2; ucACCT = 0x0F2638; ucACC2 = 0x2F5675; ucACC2T = 0xFFFFFF;
   ucMINT = 0x1F9D63; ucBLUE = 0x3880C4; ucCORAL = 0xE2784A; ucRED = 0xD64848; ucWARN = 0xD48C28;
@@ -967,7 +986,7 @@ loop(4,
     ucol(ucACC, 1); urr(usx, uy(15), 72*usc, 22*usc, 11*usc, 1);
     gfx_setfont(6); ucol(ucACCT, 1);
   ) : (
-    uhov == usid ? ( ucol(ucP2, 1); urr(usx, uy(15), 72*usc, 22*usc, 11*usc, 1); );
+    uhov == usid ? ( ucol(ucHOV, 1); urr(usx, uy(15), 72*usc, 22*usc, 11*usc, 1); );
     gfx_setfont(2); ucol(uhov == usid ? ucTEXT : ucMUTED, 1);
   );
   utc(uk == 0 ? "Correlation" : uk == 1 ? "Mono loss" : uk == 2 ? "Goniometer" : "Loudness", usx + 36*usc, uy(26.5));
@@ -986,7 +1005,7 @@ loop(2,
     ucol(ucACC2, 1); urr(usx, uy(15), usw, 22*usc, 11*usc, 1);
     gfx_setfont(6); ucol(ucACC2T, 1);
   ) : (
-    uhov == 11 + uk ? ( ucol(ucP2, 1); urr(usx, uy(15), usw, 22*usc, 11*usc, 1); );
+    uhov == 11 + uk ? ( ucol(ucHOV, 1); urr(usx, uy(15), usw, 22*usc, 11*usc, 1); );
     gfx_setfont(2); ucol(uhov == 11 + uk ? ucTEXT : ucMUTED, 1);
   );
   utc(uk == 0 ? "Stereo" : "Sidechain", usx + usw/2, uy(26.5));
@@ -996,7 +1015,7 @@ loop(2,
 // help: a round "?"
 uqx = ux(627) + uwp; uqy = uy(26);
 uinc(uqx, uqy, 12*usc) ? uhov = 41;
-ucol(uhelp ? ucACC : (uhov == 41 ? ucP2 : ucP), 1); gfx_circle(uqx, uqy, 11*usc, 1, 1);
+ucol(uhelp ? ucACC : (uhov == 41 ? ucHOV : ucP), 1); gfx_circle(uqx, uqy, 11*usc, 1, 1);
 !uhelp ? ( ucol(ucLINE, 1); gfx_circle(uqx, uqy, 11*usc, 0, 1); );
 gfx_setfont(15); ucol(uhelp ? ucACCT : (uhov == 41 ? ucTEXT : ucMUTED), 1); utc("?", uqx + 0.5*usc, uqy);
 
@@ -1235,7 +1254,7 @@ ugon ? (
     );
     gfx_setfont(5); ucol(ucTEXT, 1); utc(#ugv, ucpx + ucpw/2, ucpy + 20*usc);
     ucby = floor(ucpy + 38*usc); ucbh = floor(8*usc);
-    ucol(ucP2, 1); urr(ucpx, ucby, ucpw, ucbh, 4*usc, 1);
+    ubox(ucpx, ucby, ucpw, ucbh, 4*usc);
     ucol(ucACC, 1);
     uk == 0 ? (
       ugf > 0 ? urr(floor(ucpx + ucpw/2*(1-ugf)), ucby, floor(ucpw/2*ugf), ucbh, 4*usc, 1)
@@ -1254,119 +1273,167 @@ ugon ? (
 );
 
 uloud ? (
-  // ---- loudness: the radar on the left, the readings and the verdict on the right
+  // ---- loudness: the history graph on the left (time runs left to right, now at the right edge),
+  //      the readings and the verdict in a narrow column on the right
   lp = floor(slider10+0.5);
   lt = ltgt(lp); ltl = ltol(lp); ltpm = ltpl(lp);
-  llo = lt - 26; lhi = lt + 6;          // the radar scale: the target sits at 80 % of the radius
-  lR = min((286+uex)/2 - 25, (248+uwx)/2);
-  lcx = ux(54 + lR); lcy = uy(195 + uex/2);
-  lRp = lR*usc; lr0 = 0.34*lRp;
-  lS = lrspan();
+  llo = lt - 26; lhi = lt + 6;          // the scale: the target sits at 80 % of the height
   lmeas2 = lmeas && !ufrz;
-  // wedges: one per 1/360 of a turn, from the inner circle out to the loudness of that moment. The outline runs
-  // straight from wedge to wedge (no steps). Each wedge also covers the start of the next one along that same outline,
-  // and the colors are mixed with the panel (no transparency): no seams between neighbors.
-  lkc = lrk;
-  uk = 0;
-  loop(360,
-    m_wrr[uk] = (m_wdn[uk] > 0 && m_wde[uk] > 0) ?
-      lr0 + (lRp - lr0)*max(0, min(1, (-0.691 + 10*log10(m_wde[uk]/m_wdn[uk]) - llo)/(lhi - llo))) : -1;
-    uk += 1;
-  );
-  uk = 0;
-  loop(360,
-    lrr = m_wrr[uk];
-    lrr > lr0 + 0.5 ? (
-      lkp = (uk + 359) % 360; lkn = (uk + 1) % 360;
-      lrl = (uk != (lkc + 1) % 360 && m_wrr[lkp] >= 0) ? (lrr + m_wrr[lkp])/2 : lrr;   // the joint with the wedge before
-      lrn = (uk != lkc && m_wrr[lkn] >= 0) ? m_wrr[lkn] : lrr;                         // and with the one after
-      lrm = (lrr + lrn)/2;
-      lL = -0.691 + 10*log10(m_wde[uk]/m_wdn[uk]);
-      lage = ((lkc - uk + 360) % 360)/360;
-      ucol(umix(ucP, lcolr(lL, lt, ltl), 1 - (udark ? 0.62 : 0.22)*lage), 1);   // light: older parts stay clearly green, blue, red
-      la1 = uk*0.0174533; lam = (uk + 0.5)*0.0174533; la2 = (uk + 1)*0.0174533; la3 = (uk + 1.3)*0.0174533;
-      lre = lrm + (lrn - lrm)*0.6;
-      gfx_triangle(lcx + sin(la1)*lr0, lcy - cos(la1)*lr0, lcx + sin(la1)*lrl, lcy - cos(la1)*lrl,
-                   lcx + sin(lam)*lrr, lcy - cos(lam)*lrr, lcx + sin(la2)*lrm, lcy - cos(la2)*lrm,
-                   lcx + sin(la3)*lre, lcy - cos(la3)*lre, lcx + sin(la3)*lr0, lcy - cos(la3)*lr0);
-    );
-    uk += 1;
-  );
-  // rings: every 10 LU inside the scale, the outer edge, the inner circle and the target (mint)
-  gfx_setfont(16);
+  ldv = ux(452) + uwp;                   // the divider: the graph gets all extra width
+  lgx0 = ux(62); lgx1 = ldv - 104*usc; lgw = lgx1 - lgx0;
+  lgy0 = uy(92); lgy1 = uy(306+uex); lgh = lgy1 - lgy0;
+
+  // grid every 10 LU, the tolerance as a mint band, the target as a mint line
+  ucol(umix(ucP, ucMINT, udark ? 0.10 : 0.12), 1);
+  gfx_rect(lgx0, lgmap(lt + ltl), lgw, max(1, lgmap(lt - ltl) - lgmap(lt + ltl)));
+  gfx_setfont(3);
   ulv = ceil((llo + 0.01)/10)*10;
   loop(4,
     ulv < lhi - 0.5 ? (
-      lrr = lr0 + (lRp - lr0)*(ulv - llo)/(lhi - llo);
-      ucol(ucLINE, 1); gfx_circle(lcx, lcy, lrr, 0, 1);
-      sprintf(#ulab, "%d", ulv);
-      gfx_measurestr(#ulab, ultw, ulth);
-      ucol(ucP, 1); urr(lcx - ultw/2 - 3*usc, lcy - lrr - ulth/2, ultw + 6*usc, ulth, 3*usc, 1);
-      ucol(ucDIM, 1); utc(#ulab, lcx, lcy - lrr);
+      ucol(ucGRID, 1); gfx_rect(lgx0, lgmap(ulv), lgw, 1);
+      abs(ulv - lt) > 2.5 ? ( sprintf(#ulab, "%d", ulv); ucol(ucDIM, 1); urc(#ulab, lgx0 - 6*usc, lgmap(ulv)); );
     );
     ulv += 10;
   );
-  ucol(ucLINE, 1); gfx_circle(lcx, lcy, lRp, 0, 1); gfx_circle(lcx, lcy, lr0, 0, 1);
-  lrt = lr0 + (lRp - lr0)*26/32;
-  ucol(ucMINT, 1); uarc(lcx, lcy, lrt, 0, 6.2832, 1.4*usc);
-  // the sweep: where the radar writes now
-  la1 = (lht % lS)/lS*6.2832;
-  ucol(ucTEXT, lmeas2 ? 0.75 : 0.35); gfx_line(lcx + sin(la1)*lr0, lcy - cos(la1)*lr0, lcx + sin(la1)*(lRp + 2*usc), lcy - cos(la1)*(lRp + 2*usc), 1);
-  // momentary: a thick arc around the radar
-  ucol(ucP2, 1); uarc(lcx, lcy, lRp + 8*usc, 0, 6.2832, 3*usc);
-  lmom > llo ? ( ucol(lcolr(lmom, lt, ltl), lmeas2 ? 1 : 0.5); uarc(lcx, lcy, lRp + 8*usc, 0, 6.2832*min(1, (lmom - llo)/(lhi - llo)), 3*usc); );
-  // integrated in the middle
-  ucol(ucP, 1); gfx_circle(lcx, lcy, lr0 - 1, 1, 1);
-  gfx_setfont(11); ucol(lint > -70 ? ucTEXT : ucDIM, 1);
-  lint > -70 ? sprintf(#ulab, "%.1f", lint) : strcpy(#ulab, "--");
-  utc(#ulab, lcx, lcy - 5*usc);
-  gfx_setfont(10); ucol(ucMUTED, 1); utc("LUFS integrated", lcx, lcy + 14*usc);
-  sqr(mouse_x - lcx) + sqr(mouse_y - lcy) <= sqr(lRp + 12*usc) ? uhov = 59;
+  uk = 1;
+  loop(3, ucol(ucGRID, 1); gfx_rect(floor(lgx0 + lgw*uk/4), lgy0, 1, lgh); uk += 1; );
+  ucol(ucMINT, 1); gfx_rect(lgx0, floor(lgmap(lt) - 0.7*usc), lgw, max(1, floor(1.4*usc)));
+  sprintf(#ulab, "%d", lt); urc(#ulab, lgx0 - 6*usc, lgmap(lt));
+  ucol(ucLINE, 1); gfx_rect(lgx0, lgy1, lgw, 1);
 
-  // radar turn, top left
+  // the history: 360 steps, the oldest on the left. Filled softly, with a clean line on top in the color
+  // of each moment (mint on target, amber and red louder, blue quieter). The line runs straight from step to step.
+  lkc = lrk;
+  uk = 0;
+  loop(360,
+    lk = (lkc + 1 + uk) % 360;
+    m_wrr[uk] = (lkc >= 0 && m_wdn[lk] > 0 && m_wde[lk] > 0) ? lgmap(-0.691 + 10*log10(m_wde[lk]/m_wdn[lk])) : -1;
+    uk += 1;
+  );
+  lcw = lgw/360;
+  uk = 0;
+  loop(360,
+    lyy = m_wrr[uk];
+    lyy >= 0 ? (
+      lk = (lkc + 1 + uk) % 360;
+      lyl = (uk > 0 && m_wrr[uk-1] >= 0) ? (lyy + m_wrr[uk-1])/2 : lyy;
+      lyn = (uk < 359 && m_wrr[uk+1] >= 0) ? m_wrr[uk+1] : lyy;
+      lyr = (lyy + lyn)/2;
+      lc = lcolr(-0.691 + 10*log10(m_wde[lk]/m_wdn[lk]), lt, ltl);
+      lx0 = lgx0 + uk*lcw; lxm = lx0 + lcw/2; lx1 = lx0 + lcw;
+      lx2 = uk < 359 ? lx1 + max(1, 0.3*lcw) : lx1; lye = lyr + (lyn - lyr)*min(1, (lx2 - lx1)/max(0.0001, 0.5*lcw));   // a pixel over the next step: no seams
+      ucol(umix(ucP, lc, udark ? 0.32 : 0.30), 1);
+      gfx_triangle(lx0, lgy1, lx0, lyl, lxm, lyy, lx1, lyr, lx2, lye, lx2, lgy1);
+      ucol(lc, 1);
+      uquad(lx0, lyl, lxm, lyy, 1.6*usc); uquad(lxm, lyy, lx1, lyr, 1.6*usc);
+    );
+    uk += 1;
+  );
+  // the integrated loudness as a thin line across
+  lint > -70 && lint > llo && lint < lhi ? (
+    ucol(ucTEXT, 0.55); gfx_rect(lgx0, lgmap(lint), lgw, 1);
+  );
+  // time: the span on the left, now on the right
+  gfx_setfont(3); ucol(ucDIM, 1);
+  strcpy(#ulab, slider12 < 0.5 ? "-1 min" : slider12 < 1.5 ? "-5 min" : slider12 < 2.5 ? "-15 min" : slider12 < 3.5 ? "-30 min" :
+                slider12 < 4.5 ? "-1 h" : slider12 < 5.5 ? "-2 h" : "-5 h");
+  ulc(#ulab, lgx0, lgy1 + 10*usc);
+  urc("now", lgx1, lgy1 + 10*usc);
+  uin(lgx0, lgy0, lgw, lgh) ? uhov = 59;
+
+  // meters right of the graph: loudness (M momentary, S short-term) on the graph's scale,
+  // then the peak meters (L, R, true peak, dBFS) on their own scale
+  lmbw = 7*usc;
+  uk = 0;
+  loop(2,
+    lmbx = lgx1 + (14 + uk*12)*usc;
+    lv = uk == 0 ? lmom : lst;
+    ubox(lmbx, lgy0, lmbw, lgh, 3*usc);
+    lv > llo ? (
+      lmy = lgmap(lv);
+      ucol(lcolr(lv, lt, ltl), lmeas2 ? 1 : 0.5); urr(lmbx, lmy, lmbw, lgy1 - lmy, 3*usc, 1);
+    );
+    ucol(ucMINT, 1); gfx_rect(lmbx - 1*usc, floor(lgmap(lt) - 0.7*usc), lmbw + 2*usc, max(1, floor(1.4*usc)));
+    gfx_setfont(16); ucol(ucDIM, 1); utc(uk == 0 ? "M" : "S", lmbx + lmbw/2, lgy1 + 10*usc);
+    uin(lmbx - 3*usc, lgy0, lmbw + 6*usc, lgh) ? uhov = 80 + uk;
+    uk += 1;
+  );
+  // peaks: what came since the last frame, falling back 20 dB per second, the highest held for 2 s
+  upkt = uft/30;
+  uk = 0;
+  loop(2,
+    upv = uk == 0 ? lpkl : lpkr;
+    uk == 0 ? lpkl = 0 : lpkr = 0;
+    upd2 = upv > 0.000001 ? 20*log10(upv) : -120;
+    upk = uk == 0 ? upkl : upkr; uph = uk == 0 ? uphl : uphr; upt2 = uk == 0 ? upthl : upthr;
+    !ufrz ? (
+      upk = max(upd2, upk - 20*upkt);
+      upd2 >= uph ? ( uph = upd2; upt2 = 0; ) : ( upt2 += upkt; upt2 > 2 ? uph = max(upk, uph - 20*upkt); );
+    );
+    uk == 0 ? ( upkl = upk; uphl = uph; upthl = upt2; ) : ( upkr = upk; uphr = uph; upthr = upt2; );
+    lmbx = lgx1 + (46 + uk*10)*usc;
+    ubox(lmbx, lgy0, lmbw, lgh, 3*usc);
+    upk > -60 ? (
+      lmy = floor(lgy1 - lgh*min(1, (upk + 60)/60));
+      ucol(upk > ltpm ? ucRED : upk > ltpm - 6 ? ucWARN : ucMINT, 1); urr(lmbx, lmy, lmbw, lgy1 - lmy, 3*usc, 1);
+    );
+    uph > -60 ? ( ucol(uph > ltpm ? ucRED : ucTEXT, 0.9); gfx_rect(lmbx, floor(lgy1 - lgh*min(1, (uph + 60)/60)), lmbw, max(1, floor(1.5*usc))); );
+    gfx_setfont(16); ucol(ucDIM, 1); utc(uk == 0 ? "L" : "R", lmbx + lmbw/2, lgy1 + 10*usc);
+    uin(lmbx - 2*usc, lgy0, lmbw + 4*usc, lgh) ? uhov = 87;
+    uk += 1;
+  );
+  // the peak scale, right of the peak meters
+  gfx_setfont(16); ucol(ucDIM, 1);
+  uk = 0;
+  loop(6,
+    uv = uk == 0 ? 0 : uk == 1 ? -6 : uk == 2 ? -12 : uk == 3 ? -24 : uk == 4 ? -36 : -48;
+    sprintf(#ulab, "%d", uv);
+    urc(#ulab, ldv - 8*usc, floor(lgy1 - lgh*(uv + 60)/60));
+    uk += 1;
+  );
+  // history span, top left
   ulrx = ux(26); ulry = uy(62); ulrw = 54*usc; ulrh = 18*usc;
   uin(ulrx, ulry, ulrw, ulrh) ? uhov = 58;
   strcpy(#ulab, slider12 < 0.5 ? "1 min" : slider12 < 1.5 ? "5 min" : slider12 < 2.5 ? "15 min" : slider12 < 3.5 ? "30 min" :
                 slider12 < 4.5 ? "1 h" : slider12 < 5.5 ? "2 h" : "5 h");
   udrop(ulrx, ulry, ulrw, ulrh, uhov == 58 || udd == 1, #ulab, 8);
 
-  // readings, right of a divider
-  ldv = floor(lcx + lRp + 28*usc);
+  // readings, right of a divider, compact
   ucol(ucLINE, 1); gfx_rect(ldv, uy(66), 1, (258+uex)*usc);
   lxl = ldv + 12*usc; lxr = ux(652) + uwp;
-  lxv = lxr - 86*usc;
+  lxv = lxr - 42*usc;
   uk = 0;
   loop(6,
-    lry = uy(82 + uk*24);
-    uin(lxl, lry - 12*usc, lxr - lxl, 24*usc) ? uhov = 80 + uk;
-    gfx_setfont(2); ucol(ucMUTED, 1);
+    lry = uy(76 + uk*20);
+    uin(lxl, lry - 10*usc, lxr - lxl, 20*usc) ? uhov = 80 + uk;
+    gfx_setfont(8); ucol(ucMUTED, 1);
     ulc(uk == 0 ? "Momentary" : uk == 1 ? "Short-term" : uk == 2 ? "Integrated" : uk == 3 ? "Loudness range" : uk == 4 ? "True peak max" : "Timecode", lxl, lry);
     uk < 5 ? (
       lv = uk == 0 ? lmom : uk == 1 ? lst : uk == 2 ? lint : uk == 3 ? llra : (ltpk > 0 ? 20*log10(ltpk) : -200);
       uk == 3 ? ( lv >= 0 ? sprintf(#ulab, "%.1f", lv) : strcpy(#ulab, "--"); )
               : ( lv > (uk == 4 ? -120 : -70) ? sprintf(#ulab, "%.1f", lv) : strcpy(#ulab, "--"); );
-      gfx_setfont(5); ucol(uk <= 1 && !lmeas2 ? ucMUTED : ucTEXT, 1); urc(#ulab, lxv, lry);
-      gfx_setfont(10); ucol(ucDIM, 1); ulc(uk == 3 ? "LU" : uk == 4 ? "dBTP" : "LUFS", lxv + 6*usc, lry + 1*usc);
+      gfx_setfont(4); ucol(uk <= 1 && !lmeas2 ? ucMUTED : ucTEXT, 1); urc(#ulab, lxv, lry);
+      gfx_setfont(10); ucol(ucDIM, 1); ulc(uk == 3 ? "LU" : uk == 4 ? "dBTP" : "LUFS", lxv + 4*usc, lry + 0.5*usc);
       lc = uk == 2 ? lvcol(lv, lt, ltl, lp) : uk <= 1 ? lcolr(lv, lt, ltl) : uk == 3 ? (llra < 0 ? ucDIM : llra > (lp == 1 ? 20 : 15) ? ucWARN : ucMINT)
                                                   : (ltpk <= 0 ? ucDIM : lv > ltpm ? ucRED : ucMINT);
-      ucol(lc, 1); gfx_circle(lxr - 6*usc, lry, 3.5*usc, 1, 1);
+      ucol(lc, 1); gfx_circle(lxr - 4*usc, lry, 3*usc, 1, 1);
     ) : (
       // the DAW position as timecode, 25 frames per second (without the DAW's own start offset)
       ltcv = play_position; ltcf = floor(abs(ltcv)*25 + 0.0001);
       sprintf(#ultc, "%s%02d:%02d:%02d:%02d", ltcv < 0 ? "-" : "", floor(ltcf/90000), floor(ltcf/1500) % 60, floor(ltcf/25) % 60, ltcf % 25);
-      gfx_setfont(12); ucol(ucBLUE, 1); urc(#ultc, lxv, lry);
+      gfx_setfont(13); ucol(ucBLUE, 1); urc(#ultc, lxr, lry);
     );
     uk += 1;
   );
 
   // the verdict: three lines that say what the numbers mean for the chosen target
   strcpy(#lpn, lp == 0 ? "EBU R128" : lp == 1 ? "Netflix" : lp == 2 ? "Spotify" : lp == 3 ? "YouTube" : lp == 4 ? "Apple Music" : "Tidal");
-  lcy0 = uy(232); lch = (92+uex)*usc;
-  ucol(ucP2, 1); urr(lxl, lcy0, lxr - lxl, lch, 10*usc, 1);
+  lcy0 = uy(194); lch = (130+uex)*usc;
+  ubox(lxl, lcy0, lxr - lxl, lch, 10*usc);
   uin(lxl, lcy0, lxr - lxl, lch) ? uhov = 86;
   uk = 0;
   loop(3,
-    lry = lcy0 + (18 + uk*28)*usc;
+    lry = lcy0 + (17 + uk*40)*usc;
     uk == 0 ? (
       lint <= -70 ? (
         lc = ucDIM; strcpy(#lh, "Waiting for audio");
@@ -1397,16 +1464,16 @@ uloud ? (
       ( lc = ucMINT; strcpy(#lh, "Loudness range");
         sprintf(#ld, "%.1f LU, %s", llra, llra < 4 ? "very even" : llra < 8 ? "even" : lp == 1 ? "fine for film" : "natural dynamics"); );
     );
-    ucol(lc, 1); gfx_circle(lxl + 17*usc, lry, 3.5*usc, 1, 1);
-    gfx_setfont(6); ucol(ucTEXT, 1); ulc(#lh, lxl + 30*usc, lry);
-    gfx_setfont(8); ucol(ucMUTED, 1); ulc(#ld, lxl + 146*usc, lry);
+    ucol(lc, 1); gfx_circle(lxl + 13*usc, lry, 3*usc, 1, 1);
+    gfx_setfont(7); ucol(ucTEXT, 1); ulc(#lh, lxl + 23*usc, lry);
+    gfx_setfont(10); ucol(ucMUTED, 1); ulc(#ld, lxl + 23*usc, lry + 14*usc);
     uk += 1;
   );
 );
 
 // switched off: a small label at the top of the display
 ufrz ? (
-  // loudness: next to the radar turn; goniometer: top left; bars: top center
+  // loudness: next to the history span; goniometer: top left; bars: top center
   upsx = uloud ? ux(86) : ugon ? ux(26) : udx + udw/2 - 32*usc;
   gfx_setfont(6);
   ucol(ucACC, 1); urr(upsx, uy(62), 64*usc, 18*usc, 9*usc, 1);
@@ -1416,7 +1483,7 @@ ufrz ? (
 // ---- total: the full signal on one classic bar
 umy = uy(347+uex); umh = 10*usc; umx = ux(54); umw = (562+uwx)*usc;
 gfx_setfont(7); ucol(ucMUTED, 1); ulc("Total", ux(16), umy + umh/2);
-ucol(ucP2, 1); urr(umx, umy, umw, umh, 5*usc, 1);
+ubox(umx, umy, umw, umh, 5*usc);
 umc = floor(umx + umw/2);
 bval ? (
   uxv = floor(umx + umw*(bcor+1)/2);
@@ -1486,7 +1553,7 @@ uloud ? (
   // offset: info only, the audio is never moved
   uofx = ux(272) + floor(uwp/2); uofw = 140*usc; uofy = uy(396+uex); uofh = 46*usc;
   gfx_setfont(7); ucol(ucMUTED, 1); utc("Offset", uofx+uofw/2, ulby);
-  ucol(ucP2, 1); urr(uofx, uofy, uofw, uofh, 8*usc, 1);
+  ubox(uofx, uofy, uofw, uofh, 8*usc);
   uin(uofx, uofy, uofw, uofh+20*usc) ? uhov = 34;
   ofs_ok ? (
     uoms = abs(ofs_lag)/srate*1000;
@@ -1543,7 +1610,7 @@ udd ? (
   loop(udn,
     uiy = udly + (4 + uk*20)*usc;
     uin(udlx, uiy, udlw, 20*usc) ? uhov = 70 + uk;
-    uhov == 70 + uk ? ( ucol(ucP2, 1); urr(udlx + 4*usc, uiy, udlw - 8*usc, 20*usc, 6*usc, 1); );
+    uhov == 70 + uk ? ( ucol(ucHOV, 1); urr(udlx + 4*usc, uiy, udlw - 8*usc, 20*usc, 6*usc, 1); );
     udd == 1 ? strcpy(#ulab, uk == 0 ? "1 min" : uk == 1 ? "5 min" : uk == 2 ? "15 min" : uk == 3 ? "30 min" : uk == 4 ? "1 h" : uk == 5 ? "2 h" : "5 h")
              : strcpy(#ulab, uk == 0 ? "Always" : uk == 1 ? "Playback" : "Timecode");
     uk == udsel ? ( gfx_setfont(6); ucol(ucACC, 1); ) : ( gfx_setfont(9); ucol(ucTEXT, 1); );
@@ -1558,7 +1625,7 @@ uhelp ? (
   uhpw = floor(min(560*usc, udw - 24*usc)); uhph = floor(min(262*usc, udh - 16*usc));
   uhpx = floor(udx + (udw - uhpw)/2); uhpy = floor(udy + (udh - uhph)/2);
   uin(uhpx, uhpy, uhpw, uhph) ? uhov = 43;
-  ucol(ucP2, 1); urr(uhpx, uhpy, uhpw, uhph, 10*usc, 1);
+  ubox(uhpx, uhpy, uhpw, uhph, 10*usc);
   ucol(ucLINE, 1); urr(uhpx, uhpy, uhpw, uhph, 10*usc, 0);
   gfx_setfont(14); ucol(ucTEXT, 1); ulc("Binocular - Help", uhpx + 20*usc, uhpy + 26*usc);
   // close (x), top right of the panel
@@ -1570,8 +1637,8 @@ uhelp ? (
   ulc("Correlation: how left and right relate in each band. +1 in phase, 0 unrelated, -1 out of phase.", uhpx + 20*usc, uhl); uhl += 22*usc;
   ulc("Mono loss: how many dB each band drops when the sides are summed to mono.", uhpx + 20*usc, uhl); uhl += 22*usc;
   ulc("Goniometer: the stereo image as a trace, the correlation of the full signal below.", uhpx + 20*usc, uhl); uhl += 22*usc;
-  ulc("Loudness: momentary, short-term, integrated, range and true peak against a target. The radar", uhpx + 20*usc, uhl); uhl += 16*usc;
-  ulc("draws the history: one turn is the time set top left. Timecode measures by the DAW position.", uhpx + 20*usc, uhl); uhl += 22*usc;
+  ulc("Loudness: momentary, short-term, integrated, range and true peak against a target. The graph", uhpx + 20*usc, uhl); uhl += 16*usc;
+  ulc("shows the history, as much time as set top left. Timecode measures by the DAW position.", uhpx + 20*usc, uhl); uhl += 22*usc;
   ulc("Stereo compares left and right. Sidechain compares this track with inputs 3/4.", uhpx + 20*usc, uhl); uhl += 22*usc;
   ucol(ucMUTED, 1); ulc("Move the mouse over any control: its explanation shows at the bottom left.", uhpx + 20*usc, uhl);
   // Read Manual
@@ -1649,7 +1716,7 @@ uhov == 14 ? ulc("Reset plugin: every setting back to its default, holds, refere
 uhov == 30 ? ulc("Correlation: +1 in phase, 0 unrelated, -1 out of phase.", ustx, usty) :
 uhov == 31 ? ulc("Mono loss: how many dB each band drops when the two sides are summed to mono.", ustx, usty) :
 uhov == 35 ? ulc("Goniometer: the stereo image as a trace. Correlation stays below.", ustx, usty) :
-uhov == 36 ? ulc("Loudness: momentary, short-term, integrated, range and true peak, with a radar of the history.", ustx, usty) :
+uhov == 36 ? ulc("Loudness: momentary, short-term, integrated, range and true peak, with a graph of the history.", ustx, usty) :
 uhov == 22 ? ulc("Upright line: mono. Lying flat: out of phase. Round cloud: wide and unrelated. Leaning: one side louder.", ustx, usty) :
 uhov == 23 ? ulc("Balance: how much louder one side is than the other.", ustx, usty) :
 uhov == 24 ? ulc("Width: side against mid. Very low is mono, around 0 dB is very wide, above 0 dB the sides work against each other.", ustx, usty) :
@@ -1665,16 +1732,17 @@ uhov == 34 ? ulc("Offset: the time shift between the two sides, found across the
                    "Tidal: plays at about -14 LUFS. Louder masters are turned down.", ustx, usty);
 ) :
 uhov == 56 || (uhov >= 70 && uhov <= 72 && udd == 2) ? ulc("Measure: Always (everything that comes in), Playback (only while the DAW plays) or Timecode (by DAW position).", ustx, usty) :
-uhov == 57 ? ulc("Reset: starts a new loudness measurement. Momentary, short-term, integrated, range, true peak and radar.", ustx, usty) :
-uhov == 58 || (uhov >= 70 && uhov <= 76 && udd == 1) ? ulc("Radar: how long one turn takes, from 1 minute up to 5 hours (a whole feature film).", ustx, usty) :
-uhov == 59 ? ulc("Radar: the loudness history, one turn as set top left. Mint is on target, amber and red louder, blue quieter.", ustx, usty) :
-uhov == 80 ? ulc("Momentary: the loudness of the last 400 ms. The arc around the radar shows it too.", ustx, usty) :
-uhov == 81 ? ulc("Short-term: the loudness of the last 3 seconds.", ustx, usty) :
+uhov == 57 ? ulc("Reset: starts a new loudness measurement. Momentary, short-term, integrated, range, true peak and history.", ustx, usty) :
+uhov == 58 || (uhov >= 70 && uhov <= 76 && udd == 1) ? ulc("History: how much time the graph shows, from 1 minute up to 5 hours (a whole feature film).", ustx, usty) :
+uhov == 59 ? ulc("History: the loudness over time, now on the right. Mint band: target and tolerance. Amber and red louder, blue quieter.", ustx, usty) :
+uhov == 80 ? ulc("Momentary: the loudness of the last 400 ms. The M meter next to the graph shows it too.", ustx, usty) :
+uhov == 81 ? ulc("Short-term: the loudness of the last 3 seconds. The S meter next to the graph shows it too.", ustx, usty) :
 uhov == 82 ? ulc("Integrated: the loudness of everything measured, with the EBU R128 gates (-70 LUFS, -10 LU).", ustx, usty) :
 uhov == 83 ? ulc("Loudness range: how far the quiet and loud parts lie apart (EBU Tech 3342, 10th to 95th percentile).", ustx, usty) :
 uhov == 84 ? ulc("True peak max: the highest peak, also between the samples (oversampled as in ITU-R BS.1770).", ustx, usty) :
 uhov == 85 ? ulc("Timecode: the position of the DAW, 25 frames per second, counted from the project start.", ustx, usty) :
 uhov == 86 ? ulc("The verdict: what the numbers mean for the chosen target.", ustx, usty) :
+uhov == 87 ? ulc("Peak meters: left and right in dBFS, true peak (also between the samples). Red is above the target's limit.", ustx, usty) :
 (uhov == 20 && uhb >= 0) ? (
   ufreq(#uq0, m_fc[uhb]);
   ufreq(#uq1, flo*(fhi/flo)^(uhb/unb));

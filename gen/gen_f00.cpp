@@ -56,6 +56,11 @@ double Gen::F_ldec(double p0, double p1, double p2) {
   return ((void)((L_ldec_i = 0.0)), [&]() -> double { int n_ = rt_i32(L_ldec_n); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(ASG(L_ldec_c, str_getchar({L_ldec_str, L_ldec_i}))), (void)(ASG(M((L_ldec_dst + L_ldec_i)), ((L_ldec_c <= 57.0) ? (double)(L_ldec_c - 48.0) : (double)((L_ldec_c - 97.0) + 10.0)))), (L_ldec_i += 1.0))); } return 0.0; }());
 }
 
+double Gen::F_lgmap(double p0) {
+  L_lgmap_l = p0;
+  return std::floor(((g_lgy1 - (g_lgh * rt_max(0.0, rt_min(1.0, ((L_lgmap_l - g_llo) / (g_lhi - g_llo)))))) + 0.5));
+}
+
 double Gen::F_lhist(double p0, double p1, double p2, double p3) {
   L_lhist_e = p0; L_lhist_cn = p1; L_lhist_en = p2; L_lhist_sg = p3;
   return ((L_lhist_e > 0.0) ? (double)((void)(ASG(L_lhist_l, ((-0.691) + (10.0 * rt_log10(L_lhist_e))))), ((L_lhist_l >= (-70.0)) ? (double)((void)(ASG(L_lhist_b, rt_min(799.0, std::floor(((L_lhist_l + 70.0) * 10.0))))), (void)((M((L_lhist_cn + L_lhist_b)) += L_lhist_sg)), (M((L_lhist_en + L_lhist_b)) += (L_lhist_sg * L_lhist_e))) : 0.0)) : 0.0);
@@ -121,9 +126,14 @@ double Gen::F_uarc(double p0, double p1, double p2, double p3, double p4, double
   return ((void)((L_uarc_k = 0.0)), [&]() -> double { int n_ = rt_i32(rt_max(1.0, std::ceil((L_uarc_th * 2.0)))); if (n_ > 1048576) n_ = 1048576; for (; n_ > 0; --n_) { (void)(((void)(gfx_arc({L_uarc_cx, L_uarc_cy, ((L_uarc_rad - (L_uarc_th / 2.0)) + (L_uarc_k * 0.5)), L_uarc_a1, L_uarc_a2, 1.0})), (L_uarc_k += 1.0))); } return 0.0; }());
 }
 
+double Gen::F_ubox(double p0, double p1, double p2, double p3, double p4) {
+  L_ubox_x = p0; L_ubox_y = p1; L_ubox_w = p2; L_ubox_h = p3; L_ubox_r = p4;
+  return ((void)(F_ucol(g_ucp2, 1.0)), (void)(F_urr(L_ubox_x, L_ubox_y, L_ubox_w, L_ubox_h, L_ubox_r, 1.0)), ((!B(g_udark)) ? (double)((void)(F_ucol(g_ucline, 1.0)), F_urr(L_ubox_x, L_ubox_y, L_ubox_w, L_ubox_h, L_ubox_r, 0.0)) : 0.0));
+}
+
 double Gen::F_ubtn(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
   L_ubtn_x = p0; L_ubtn_y = p1; L_ubtn_w = p2; L_ubtn_h = p3; L_ubtn_on = p4; L_ubtn_hot = p5; L_ubtn_str = p6;
-  return ((void)((B(L_ubtn_on) ? (double)((void)(F_ucol(g_ucacc, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(gfx_setfont({6.0})), F_ucol(g_ucacct, 1.0)) : (double)((void)(F_ucol((B(L_ubtn_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({9.0})), F_ucol(g_uctext, 1.0)))), F_utc(L_ubtn_str, (L_ubtn_x + (L_ubtn_w / 2.0)), (L_ubtn_y + (L_ubtn_h / 2.0))));
+  return ((void)((B(L_ubtn_on) ? (double)((void)(F_ucol(g_ucacc, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(gfx_setfont({6.0})), F_ucol(g_ucacct, 1.0)) : (double)((void)(F_ucol((B(L_ubtn_hot) ? g_uchov : g_ucp2), 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_ubtn_x, L_ubtn_y, L_ubtn_w, L_ubtn_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({9.0})), F_ucol(g_uctext, 1.0)))), F_utc(L_ubtn_str, (L_ubtn_x + (L_ubtn_w / 2.0)), (L_ubtn_y + (L_ubtn_h / 2.0))));
 }
 
 double Gen::F_ucol(double p0, double p1) {
@@ -153,7 +163,7 @@ double Gen::F_udef(double p0) {
 
 double Gen::F_udrop(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
   L_udrop_x = p0; L_udrop_y = p1; L_udrop_w = p2; L_udrop_h = p3; L_udrop_hot = p4; L_udrop_str = p5; L_udrop_fnt = p6;
-  return ((void)(F_ucol((B(L_udrop_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({L_udrop_fnt})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_udrop_str, (L_udrop_x + ((L_udrop_w - (12.0 * g_usc)) / 2.0)), (L_udrop_y + (L_udrop_h / 2.0)))), (void)(F_ucol(g_ucmuted, 1.0)), gfx_triangle({(L_udrop_x + (L_udrop_w - (15.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (9.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (12.0 * g_usc))), ((L_udrop_y + (L_udrop_h / 2.0)) + (2.0 * g_usc))}));
+  return ((void)(F_ucol((B(L_udrop_hot) ? g_uchov : g_ucp2), 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 1.0)), (void)(F_ucol(g_ucline, 1.0)), (void)(F_urr(L_udrop_x, L_udrop_y, L_udrop_w, L_udrop_h, (8.0 * g_usc), 0.0)), (void)(gfx_setfont({L_udrop_fnt})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_udrop_str, (L_udrop_x + ((L_udrop_w - (12.0 * g_usc)) / 2.0)), (L_udrop_y + (L_udrop_h / 2.0)))), (void)(F_ucol(g_ucmuted, 1.0)), gfx_triangle({(L_udrop_x + (L_udrop_w - (15.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (9.0 * g_usc))), (L_udrop_y + ((L_udrop_h / 2.0) - (2.0 * g_usc))), (L_udrop_x + (L_udrop_w - (12.0 * g_usc))), ((L_udrop_y + (L_udrop_h / 2.0)) + (2.0 * g_usc))}));
 }
 
 double Gen::F_ufrac(double p0) {
@@ -178,7 +188,7 @@ double Gen::F_uinc(double p0, double p1, double p2) {
 
 double Gen::F_uknob(double p0, double p1, double p2, double p3, double p4, double p5, double p6) {
   L_uknob_id = p0; L_uknob_cx = p1; L_uknob_cy = p2; L_uknob_rad = p3; L_uknob_f = p4; L_uknob_label = p5; L_uknob_val = p6;
-  return ((void)(ASG(L_uknob_hot, (((EQ(g_uhov, L_uknob_id) || EQ(g_udrag, L_uknob_id)) || (EQ(L_uknob_id, 1.0) && EQ(g_udrag, 2.0))) ? 1.0 : 0.0))), (void)(gfx_setfont({7.0})), (void)(F_ucol(g_ucmuted, 1.0)), (void)(F_utc(L_uknob_label, L_uknob_cx, g_ulby)), (void)(F_ucol((B(L_uknob_hot) ? g_ucline : g_ucp2), 1.0)), (void)(F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), 2.356, (3.0 * g_usc))), (void)(((L_uknob_f > 0.002) ? (double)((void)(F_ucol(g_ucacc, 1.0)), F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), ((-2.356) + (4.712 * L_uknob_f)), (3.0 * g_usc))) : 0.0)), (void)(ASG(L_uknob_ang, ((-2.356) + (4.712 * L_uknob_f)))), (void)(F_ucol(g_uctext, 1.0)), (void)(F_uquad(L_uknob_cx, L_uknob_cy, (L_uknob_cx + (rt_sin(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (L_uknob_cy - (rt_cos(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (1.6 * g_usc))), (void)(gfx_setfont({13.0})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_uknob_val, L_uknob_cx, g_unty)), (B(F_uinc(L_uknob_cx, L_uknob_cy, (L_uknob_rad + (8.0 * g_usc)))) ? (double)(g_uhov = L_uknob_id) : 0.0));
+  return ((void)(ASG(L_uknob_hot, (((EQ(g_uhov, L_uknob_id) || EQ(g_udrag, L_uknob_id)) || (EQ(L_uknob_id, 1.0) && EQ(g_udrag, 2.0))) ? 1.0 : 0.0))), (void)(gfx_setfont({7.0})), (void)(F_ucol(g_ucmuted, 1.0)), (void)(F_utc(L_uknob_label, L_uknob_cx, g_ulby)), (void)(F_ucol((B(g_udark) ? (double)(B(L_uknob_hot) ? g_ucline : g_ucp2) : (double)(B(L_uknob_hot) ? (double)13229550.0 : (double)g_ucline)), 1.0)), (void)(F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), 2.356, (3.0 * g_usc))), (void)(((L_uknob_f > 0.002) ? (double)((void)(F_ucol(g_ucacc, 1.0)), F_uarc(L_uknob_cx, L_uknob_cy, L_uknob_rad, (-2.356), ((-2.356) + (4.712 * L_uknob_f)), (3.0 * g_usc))) : 0.0)), (void)(ASG(L_uknob_ang, ((-2.356) + (4.712 * L_uknob_f)))), (void)(F_ucol(g_uctext, 1.0)), (void)(F_uquad(L_uknob_cx, L_uknob_cy, (L_uknob_cx + (rt_sin(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (L_uknob_cy - (rt_cos(L_uknob_ang) * (L_uknob_rad - (6.0 * g_usc)))), (1.6 * g_usc))), (void)(gfx_setfont({13.0})), (void)(F_ucol(g_uctext, 1.0)), (void)(F_utc(L_uknob_val, L_uknob_cx, g_unty)), (B(F_uinc(L_uknob_cx, L_uknob_cy, (L_uknob_rad + (8.0 * g_usc)))) ? (double)(g_uhov = L_uknob_id) : 0.0));
 }
 
 double Gen::F_ulc(double p0, double p1, double p2) {
