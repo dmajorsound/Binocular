@@ -4,8 +4,7 @@ Multiband correlation meter, goniometer and loudness meter (ITU-R BS.1770 / EBU 
 by dmajorsound (dmajorsound.com) as VST3, CLAP and (macOS) AU.
 The audio passes through untouched, no latency.
 
-Binocular is no longer released as a REAPER JSFX. `jsfx/Binocular.jsfx` stays in this repository only as the source
-the plug-in is generated from (see below); it is not a supported product on its own.
+Binocular is plain C++ (JUCE). There is no JSFX version any more.
 
 ## Install on the Mac (no programming needed)
 
@@ -23,29 +22,26 @@ builds and installs. The first build takes 5–15 minutes.
 
 ## Sidechain
 
-The second input pair of the JSFX (inputs 3/4) is a sidechain bus in the VST3. In REAPER, route the second source
-to channels 3/4 of the track and pick *Sidechain* in the plugin.
+The plug-in has a stereo sidechain bus (inputs 3/4). In REAPER, route the second source to channels 3/4 of the track
+and pick *Sidechain* in the plug-in. Loudness is always measured on the main input.
 
-## How the port works
+## Code
 
-The JSFX code is translated to C++ by a program, not by hand: `tools/transpile.py` → `gen/`. The translator follows
-the arithmetic of REAPER's EEL2 exactly (operator order, fuzzy compares, denormal handling, memory indexing).
-`src/rt.*` is the runtime (memory, strings, FFT from WDL), `src/engine.*` the JSFX host flow, `src/JuceGfx.*` maps the
-gfx drawing to JUCE, `src/PluginEditor.*` runs `@gfx` at 30 fps.
+- `src/Analyzer.*` – the measuring, on the audio thread: multiband correlation and mono loss from an FFT cross-spectrum
+  (long FFT for the bass, short FFT for the rest), time offset and polarity (GCC-PHAT), the goniometer buffer, and
+  loudness (ITU-R BS.1770-4 K-weighting, momentary, short-term, integrated with the EBU R128 gates, loudness range
+  after EBU Tech 3342, true peak with 4x oversampling, a 5-hour timeline of 100 ms slots for timecode measuring).
+- `src/PluginProcessor.*` – parameters (IDs `s1` … `s12`, unchanged since the first version, so old projects load),
+  state, audio buses.
+- `src/PluginEditor.*`, `src/Look.h` – the window: drawn with JUCE in units of a 680 × 520 layout, scaled to any size.
+- `src/UpdateCheck.*` – the update note in the footer (GitHub releases, download and install).
+- `fonts/` – Mulish and Red Hat Mono (SIL Open Font License), embedded.
+- `third_party/wdl/` – the FFT.
 
-Change the JSFX, then: `python3 tools/transpile.py jsfx/Binocular.jsfx gen`, then build. Do not edit `gen/` by hand.
-Do not remove `-ffp-contract=off` (or `/fp:precise`): the arithmetic would no longer match the JSFX.
+## Tests
 
-## Tests (Linux)
-
-- `test/refcheck.cpp`: runs the original JSFX in ysfx (the EEL2 engine), `test/natcheck.cpp` the generated C++,
-  both with the same 4-channel test signals; `test/run.sh` compares every meter value (correlation and mono loss per
-  band, total, offset, polarity, balance, width, goniometer buffer).
-- `test/host/`: small VST3 host – editor on screen, state save/load round trip.
-
-## Status
-
-- 10 comparisons JSFX ↔ C++ bit-identical (4 to 256 bands, 44.1 to 192 kHz, block sizes 33 to 2048, stereo and sidechain,
-  offset, polarity flipped, mono, tone)
-- VST3 binary: loads, editor draws all three pages, state save/load byte-identical
-- Tested only on Linux. Not yet tested: REAPER, macOS, Windows, Retina.
+- `tests/update_download.cpp` – the GitHub build downloads a published installer the way the update note does.
+- The analyzer was checked against the earlier engine with the same test signals (4 to 256 bands, 44.1 to 192 kHz,
+  block sizes 33 to 2048, stereo and sidechain, offset, polarity flipped, mono, tone): every reading identical to within
+  1e-13 (the goniometer buffer, now stored as float, within 3e-8). Loudness against reference signals: 1 kHz at
+  -20 dBFS on both sides reads -19.99 LUFS (EBU tolerance ±0.1), the EBU Tech 3342 range case reads 10.0 LU.

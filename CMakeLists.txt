@@ -34,11 +34,10 @@ juce_add_plugin(Binocular
   AU_MAIN_TYPE kAudioUnitType_Effect
   COPY_PLUGIN_AFTER_BUILD FALSE)
 
-file(GLOB BN_GEN ${CMAKE_CURRENT_SOURCE_DIR}/gen/*.cpp)
 target_sources(Binocular PRIVATE
-  src/PluginProcessor.cpp src/PluginEditor.cpp src/UpdateCheck.cpp src/JuceGfx.cpp src/rt.cpp src/engine.cpp
-  third_party/wdl/fft.c ${BN_GEN})
-target_include_directories(Binocular PRIVATE src gen third_party/wdl)
+  src/PluginProcessor.cpp src/PluginEditor.cpp src/Analyzer.cpp src/UpdateCheck.cpp
+  third_party/wdl/fft.c)
+target_include_directories(Binocular PRIVATE src third_party/wdl)
 
 target_compile_definitions(Binocular PUBLIC
   WDL_FFT_REALSIZE=8
@@ -48,13 +47,6 @@ option(BN_MINIMAL_X11 "Linux: build without the Xrandr/Xinerama/Xcursor/XInput2/
 if(UNIX AND NOT APPLE AND BN_MINIMAL_X11)
   target_compile_definitions(Binocular PUBLIC JUCE_USE_XRANDR=0 JUCE_USE_XINERAMA=0 JUCE_USE_XCURSOR=0
                                                 JUCE_USE_XINPUT=0 JUCE_USE_XRENDER=0)
-endif()
-
-# bit-exact arithmetic with the JSFX: no FMA contraction, no fast-math
-if(MSVC)
-  target_compile_options(Binocular PRIVATE /fp:precise /bigobj)
-else()
-  target_compile_options(Binocular PRIVATE -ffp-contract=off -fno-fast-math)
 endif()
 
 # the plug-in's typefaces (SIL Open Font License, see fonts/): Mulish for text, Red Hat Mono for numbers

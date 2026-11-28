@@ -1,7 +1,8 @@
 #pragma once
 #include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "engine.h"
+#include "Analyzer.h"
+#include "Params.h"
 
 class BinocularProcessor : public juce::AudioProcessor {
 public:
@@ -9,6 +10,7 @@ public:
     // (a new Binocular starts with the size last used in this session)
     static inline std::atomic<int> sessionW { 680 }, sessionH { 520 };
     std::atomic<int> editorW { sessionW.load() }, editorH { sessionH.load() };
+
     BinocularProcessor();
     ~BinocularProcessor() override = default;
 
@@ -37,23 +39,18 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    rs::Engine engine;
+    // a parameter by its number (bn::Param): the value, and a change from the editor (one undo step in the host)
+    double get(int number) const;
+    void set(int number, double value);
+    juce::AudioParameterFloat* param(int number) const { return params[number]; }
 
-    // diagnostics (binocular-debug.txt on the desktop): time spent in host notifications and state calls
-    struct Diag { std::atomic<int> notifyCount { 0 }, stateCount { 0 }; std::atomic<double> notifyMs { 0 }, notifyMaxMs { 0 }, stateMs { 0 }; };
-    Diag diag;
-    juce::CriticalSection engineLock;            // @serialize vs audio (the @gfx thread runs unlocked, as in REAPER)
+    bn::Analyzer analyzer;
 
 private:
     template <class Real> void process(juce::AudioBuffer<Real>& buffer);
-    void syncParamsToEngine();
-    void scriptAutomate(int idx, int mode);
-    void scriptChanged(int idx);
+    bn::Settings settings() const;
 
-    std::vector<juce::RangedAudioParameter*> paramBySlider;   // index = JSFX slider number
-    std::unique_ptr<std::atomic<float>[]> lastPushed;
-    std::vector<char> touching;
-    int lastLatency = -1;
-    std::vector<double> scSilence;               // zeros for absent inputs (sized as double: covers float and double)
+    juce::AudioParameterFloat* params[bn::kNumParams + 1] {};
+    std::vector<double> silence;               // zeros for an absent sidechain
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BinocularProcessor)
 };
