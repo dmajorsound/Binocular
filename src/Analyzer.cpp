@@ -2,6 +2,7 @@
 #include "fft.h"
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace bn {
 
@@ -9,6 +10,9 @@ static constexpr double kTiny = 1e-24, kTiny12 = 1e-12;
 static constexpr double kPi = 3.141592653589793;
 
 static double energyToLufs(double e) { return -0.691 + 10.0 * std::log10(e); }
+
+// what the correlation pages compare: stereo, or in 5.1 front, surround or downmix
+static int inputKey(const Settings& s) { return s.surround ? 10 + s.pair : 0; }
 
 constexpr int Analyzer::kBandCounts[10];
 
@@ -19,7 +23,8 @@ Analyzer::Analyzer() {
     fftBuf.assign(65536, 0.0);
     for (auto* v : {&sxx, &syy, &sxy, &sxi, &cxx, &cyy, &cxy}) v->assign(16400, 0.0);
     for (auto* v : {&s2x, &s2y, &s2c, &c2x, &c2y, &c2c}) v->assign(8200, 0.0);
-    slotMom.assign(kSlots, 0.0); slotShort.assign(kSlots, 0.0); slotUsed.assign(kSlots, 0);
+    slotMom.assign(kSlots, 0.0); slotShort.assign(kSlots, 0.0); slotUsed.assign(kSlots, 0); slotDialog.assign(kSlots, 0);
+    spBuf.reserve(4096);
     historyRing.assign(kSlots, 0.0);
 }
 
@@ -83,7 +88,7 @@ void Analyzer::setup(const Settings& s) {
     total = 0; totalValid = false; totalHeld = 1; totalHeldTime = 0;
     offsetFound = false; offsetSamples = 0; polarity = 1;
     setupCount++;
-    lastBands = s.bandsIndex; lastSelectivity = s.selectivity; lastRate = sampleRate; lastInput = s.sidechain ? 1 : 0;
+    lastBands = s.bandsIndex; lastSelectivity = s.selectivity; lastRate = sampleRate; lastInput = inputKey(s);
 }
 
 // ---------------------------------------------------------------- FFT engine
@@ -223,6 +228,17 @@ void Analyzer::loudnessFilters() {
         for (int k = 0; k < 12; k++) s += tpCoef[(size_t)(p + oversample * k)];
         for (int k = 0; k < 12; k++) tpCoef[(size_t)(p + oversample * k)] /= s;
     }
+    // dialog detection: band-pass 250 Hz .. 3.5 kHz (RBJ, Q 0.707), the band at ~8 kHz, sub-frames of 25 ms
+    auto biquad = [&](double f, bool high, double* b, double* a) {
+        const double w0 = 2 * kPi * f / sampleRate, al = std::sin(w0) / (2 * 0.7071), cs = std::cos(w0), a0 = 1 + al;
+        if (high) { b[0] = (1 + cs) / 2 / a0; b[1] = -(1 + cs) / a0; b[2] = b[0]; }
+        else { b[0] = (1 - cs) / 2 / a0; b[1] = (1 - cs) / a0; b[2] = b[0]; }
+        a[0] = -2 * cs / a0; a[1] = (1 - al) / a0;
+    };
+    biquad(250, true, spB, spA);
+    biquad(3500, false, spB + 3, spA + 2);
+    spDecim = std::max(1, (int)std::lround(sampleRate / 8000));
+    spSubLen = std::max(1, (int)std::lround(0.025 * sampleRate));
     loudnessRate = sampleRate;
 }
 
@@ -230,11 +246,17 @@ void Analyzer::loudnessReset() {
     std::fill(slotMom.begin(), slotMom.end(), 0.0); std::fill(slotShort.begin(), slotShort.end(), 0.0);
     std::fill(slotUsed.begin(), slotUsed.end(), 0);
     momCount.fill(0); momEnergy.fill(0); stCount.fill(0); stEnergy.fill(0);
-    last30.fill(0); stepEnergy.fill(0); stepCount.fill(0); tpHistL.fill(0); tpHistR.fill(0);
-    k1L = k2L = k1R = k2R = h1L = h2L = h1R = h2R = 0;
+    last30.fill(0); stepEnergy.fill(0); stepCount.fill(0);
+    for (auto& h : tpHist) h.fill(0);
+    for (auto& k : kState) k.fill(0);
+    std::fill(slotDialog.begin(), slotDialog.end(), 0);
+    dlgCount.fill(0); dlgEnergy.fill(0); dialogSlots = 0; dialog = -200; dialogShare = 0; speechNow = false;
+    spHx1 = spHx2 = spHy1 = spHy2 = spLx1 = spLx2 = spLy1 = spLy2 = 0;
+    spBandSum = spFullSum = spDecAcc = spSubSum = 0; spDecCount = spSubCount = 0; spBuf.clear();
+    spSubDb.fill(-120); spSubPos = spSubFilled = 0; spVoiced.fill(0); spVoicedPos = 0; spRatio.fill(0); spPitch.fill(0); spHold = 0;
     currentSlot = -1000000000; previousSlot = currentSlot; contiguous = 0; slotSum = 0; slotCount = 0; measuredSamples = 0;
     last30Pos = 0; momentary = shortTerm = -200; measuredSlots = 0; historyCount = 0; newestStep = -1;
-    integrated = -200; range = -1; truePeakMax = 0; tpWrite = 0;
+    integrated = -200; range = -1; truePeakMax = 0; tpWrite = 0; momentaryMax = shortTermMax = -200;
     loudnessDirty = false;
 }
 
@@ -248,17 +270,67 @@ void Analyzer::histogram(double e, double* counts, double* energies, double sign
 }
 
 // a finished slot into the timeline, replacing whatever was measured there before
-void Analyzer::store(long long slot, double em, double es) {
-    const long long i = ((slot % kSlots) + kSlots) % kSlots;
-    if (slotUsed[(size_t)i]) {
-        histogram(slotMom[(size_t)i], momCount.data(), momEnergy.data(), -1);
-        histogram(slotShort[(size_t)i], stCount.data(), stEnergy.data(), -1);
+void Analyzer::store(long long slot, double em, double es, bool isDialog) {
+    const size_t i = (size_t)(((slot % kSlots) + kSlots) % kSlots);
+    if (slotUsed[i]) {
+        histogram(slotMom[i], momCount.data(), momEnergy.data(), -1);
+        histogram(slotShort[i], stCount.data(), stEnergy.data(), -1);
+        if (slotDialog[i]) { histogram(slotMom[i], dlgCount.data(), dlgEnergy.data(), -1); dialogSlots--; }
         measuredSlots--;
     }
-    slotMom[(size_t)i] = em; slotShort[(size_t)i] = es; slotUsed[(size_t)i] = 1;
+    slotMom[i] = em; slotShort[i] = es; slotUsed[i] = 1; slotDialog[i] = isDialog ? 1 : 0;
     histogram(em, momCount.data(), momEnergy.data(), 1);
     histogram(es, stCount.data(), stEnergy.data(), 1);
+    if (isDialog) { histogram(em, dlgCount.data(), dlgEnergy.data(), 1); dialogSlots++; }
     measuredSlots++;
+}
+
+// dialog in the slot that just ended? Voiced (a pitch between 70 and 400 Hz) in some but not all of the last second,
+// most of the energy in the speech band, and the level moving with syllables. Held for half a second.
+// This is Binocular's own detector: close to, but not the same as Dolby Dialogue Intelligence.
+bool Analyzer::detectSpeech() {
+    const double ratio = spBandSum / (spFullSum + kTiny);
+    const double bandDb = 10 * std::log10(spBandSum / std::max<long long>(1, slotCount) + kTiny);
+    // voicing: the strongest normalized autocorrelation at a pitch lag
+    double periodicity = 0, bestLag = 0;
+    const int N = (int)spBuf.size();
+    const double fs8 = sampleRate / spDecim;
+    const int lagMin = std::max(2, (int)(fs8 / 400)), lagMax = std::min(N / 2, (int)(fs8 / 70));
+    for (int lag = lagMin; lag <= lagMax; lag++) {
+        double xy = 0, xx = 0, yy = 0;
+        for (int i = 0; i + lag < N; i++) { const double a = spBuf[(size_t)i], b = spBuf[(size_t)(i + lag)]; xy += a * b; xx += a * a; yy += b * b; }
+        if (xx > 0 && yy > 0 && xy / std::sqrt(xx * yy) > periodicity) { periodicity = xy / std::sqrt(xx * yy); bestLag = lag; }
+    }
+    const bool voiced = periodicity > 0.5 && bandDb > -60;
+    spVoiced[(size_t)spVoicedPos] = voiced ? 1 : 0;
+    spRatio[(size_t)spVoicedPos] = ratio;
+    spPitch[(size_t)spVoicedPos] = voiced && bestLag > 0 ? fs8 / bestLag : 0;
+    spVoicedPos = (spVoicedPos + 1) % (int)spVoiced.size();
+    int nv = 0; double ratioSum = 0;
+    for (size_t k = 0; k < spVoiced.size(); k++) { nv += spVoiced[k]; ratioSum += spRatio[k]; }
+    // syllable rhythm: how much the 25 ms levels of the last second move (speech rises and falls, sustained music less)
+    // (levels more than 40 dB under the loudest count as 40 dB under: digital silence would rule otherwise)
+    const int n = std::min(spSubFilled, (int)spSubDb.size());
+    double top = -200;
+    for (int k = 0; k < n; k++) top = std::max(top, spSubDb[(size_t)k]);
+    auto lv = [&](int k) { return std::max(spSubDb[(size_t)k], top - 40); };
+    double mean = 0, var = 0;
+    for (int k = 0; k < n; k++) mean += lv(k);
+    mean /= std::max(1, n);
+    for (int k = 0; k < n; k++) var += (lv(k) - mean) * (lv(k) - mean);
+    const double movement = n > 1 ? std::sqrt(var / n) : 0;
+    // intonation: speech glides in pitch from slot to slot, held notes and chords stay put
+    double glide = 0; int pairs = 0;
+    const size_t L = spPitch.size();
+    for (size_t k = 1; k < L; k++) {
+        const double p0 = spPitch[(spVoicedPos + k - 1) % L], p1 = spPitch[(spVoicedPos + k) % L];
+        if (p0 > 0 && p1 > 0) { glide += std::fabs(std::log(p1 / p0)); pairs++; }
+    }
+    const bool gliding = pairs > 0 && glide / pairs >= 0.01;   // on average more than 1 % from slot to slot
+    const bool speech = nv >= 3 && gliding && ratioSum / spVoiced.size() >= 0.4 && movement >= 4.5 && bandDb > -60;
+    if (speech) spHold = 0.5; else spHold -= 0.1;
+    spBandSum = spFullSum = 0; spBuf.clear();
+    return speech || spHold > 0;
 }
 
 void Analyzer::addToHistory(double e, int span) {
@@ -296,7 +368,10 @@ void Analyzer::finishSlot(int span) {
     em /= nm; es /= ns;
     momentary = em > 0 ? energyToLufs(em) : -200;
     shortTerm = es > 0 ? energyToLufs(es) : -200;
-    store(currentSlot, contiguous >= 4 ? em : 0, contiguous >= 30 ? es : 0);
+    if (contiguous >= 4) momentaryMax = std::max(momentaryMax, momentary);    // the highest full 400 ms block
+    if (contiguous >= 30) shortTermMax = std::max(shortTermMax, shortTerm);   // the highest full 3 s window
+    speechNow = detectSpeech();
+    store(currentSlot, contiguous >= 4 ? em : 0, contiguous >= 30 ? es : 0, speechNow);
     addToHistory(em, span);
     loudnessDirty = true;
 }
@@ -312,6 +387,11 @@ void Analyzer::loudnessValues() {
         for (int b = g; b < kHistBins; b++) { n2 += momCount[(size_t)b]; e2 += momEnergy[(size_t)b]; }
         if (n2 > 0.5 && e2 > 0) integrated = energyToLufs(e2 / n2);
     }
+    // dialog-gated: the momentary blocks found to be dialog (absolute gate -70 LUFS)
+    n = 0; e = 0;
+    for (int b = 0; b < kHistBins; b++) { n += dlgCount[(size_t)b]; e += dlgEnergy[(size_t)b]; }
+    dialog = (n > 0.5 && e > 0) ? energyToLufs(e / n) : -200;
+    dialogShare = measuredSlots > 0 ? (double)dialogSlots / measuredSlots : 0;
     n = 0; e = 0;
     for (int b = 0; b < kHistBins; b++) { n += stCount[(size_t)b]; e += stEnergy[(size_t)b]; }
     range = -1;
@@ -370,8 +450,10 @@ void Analyzer::endOfBlock(const Settings& s, int n) {
 }
 
 template <class Real>
-void Analyzer::process(const Real* inL, const Real* inR, const Real* scL, const Real* scR, int n, const Settings& s, const Transport& t) {
-    if (s.bandsIndex != lastBands || s.selectivity != lastSelectivity || sampleRate != lastRate || (s.sidechain ? 1 : 0) != lastInput) setup(s);
+void Analyzer::process(const Real* const* ch, int n, const Settings& s, const Transport& t) {
+    if (s.bandsIndex != lastBands || s.selectivity != lastSelectivity || sampleRate != lastRate || inputKey(s) != lastInput) setup(s);
+    const int nch = s.surround ? 6 : 2;
+    if (nch != channels) { channels = nch; loudnessReset(); }   // stereo <-> 5.1: a new measurement
 
     // loudness: a new sample rate or a new way of measuring starts a new measurement; Reset asks for one too
     if (loudnessRate != sampleRate) { loudnessFilters(); loudnessReset(); }
@@ -383,6 +465,7 @@ void Analyzer::process(const Real* inL, const Real* inR, const Real* scL, const 
     if (!measuring && slotCount > 0) { finishSlot(s.span); slotSum = 0; slotCount = 0; }   // stopped: the slot in progress counts as it is
 
     const double kav = 1 - std::exp(-1000 / (std::max(1.0, s.averagingMs) * sampleRate));
+    const double vecK = 1 - std::exp(-1 / (0.03 * sampleRate));   // fast: the speaker shape moves with the music
     const bool running = !s.frozen;           // switched off: analysis stops, the display keeps the last picture
     if (running) {
         // the FFT work, spread over the blocks so no single block carries all of it:
@@ -393,14 +476,23 @@ void Analyzer::process(const Real* inL, const Real* inR, const Real* scL, const 
         endOfBlock(s, n);
     }
 
+    // BS.1770 channel weights: L, R, C 1.0, Ls, Rs 1.41 (+1.5 dB), LFE not counted
+    static const double weight[6] = { 1.0, 1.0, 1.0, 0.0, 1.41, 1.41 };
     int gw = gonioWrite.load(std::memory_order_relaxed);
-    float pkL = 0, pkR = 0;
+    float pk[6] = { 0, 0, 0, 0, 0, 0 };
+    double x[6] = { 0, 0, 0, 0, 0, 0 };
     for (int i = 0; i < n; i++) {
-        const double s0 = (double)inL[i], s1 = (double)inR[i];
+        for (int c = 0; c < nch; c++) x[c] = (double)ch[c][i];
         if (running) {
             double xl, xr;
-            if (s.sidechain) { xl = (s0 + s1) * 0.5; xr = ((double)scL[i] + (double)scR[i]) * 0.5; }
-            else { xl = s0; xr = s1; }
+            if (s.surround) {
+                if (s.pair == 1) { xl = x[4]; xr = x[5]; }                                  // surround: Ls / Rs
+                else if (s.pair == 2) {                                                     // downmix Lo / Ro
+                    xl = x[0] + s.dmxCentre * x[2] + s.dmxSurround * x[4] + s.dmxLfe * x[3];
+                    xr = x[1] + s.dmxCentre * x[2] + s.dmxSurround * x[5] + s.dmxLfe * x[3];
+                }
+                else { xl = x[0]; xr = x[1]; }                                              // front: L / R
+            } else { xl = x[0]; xr = x[1]; }
             denormal = -denormal;
             xl += denormal; xr += denormal;
             sxyAvg += (xl * xr - sxyAvg) * kav;
@@ -416,13 +508,36 @@ void Analyzer::process(const Real* inL, const Real* inR, const Real* scL, const 
             if (++hopCount >= hopLong) { hopCount = 0; frameStart = (histWrite - fftLong + 65536) & 65535; longDue = true; }
             if (++hopCount2 >= hopShort) { hopCount2 = 0; frameStart2 = (histWrite - fftShort + 65536) & 65535; shortDue = true; }
         }
+        if (running && nch == 6) {
+            // 5.1 vectorscope: levels per channel, and every 32 samples the energy vector
+            for (int c = 0; c < 6; c++) { channelPower[(size_t)c] += (x[c] * x[c] - channelPower[(size_t)c]) * vecK; vecAcc[(size_t)c] += x[c] * x[c]; }
+            if (++vecCount >= 32) {
+                static const double ang[6] = { -0.5236, 0.5236, 0.0, 0.0, -1.9199, 1.9199 };   // L R C (LFE) Ls Rs, radians
+                double sum = 0, vx = 0, vy = 0;
+                for (int c = 0; c < 6; c++) {
+                    if (c == 3) continue;
+                    const double e = vecAcc[(size_t)c];
+                    sum += e; vx += e * std::sin(ang[c]); vy += e * std::cos(ang[c]);
+                }
+                const int w = vecWrite.load(std::memory_order_relaxed);
+                const bool heard = sum > 32 * 1e-10;   // about -100 dBFS
+                vecX[(size_t)w] = heard ? (float)(vx / sum) : std::numeric_limits<float>::quiet_NaN();
+                vecY[(size_t)w] = heard ? (float)(vy / sum) : std::numeric_limits<float>::quiet_NaN();
+                vecWrite.store((w + 1) & (kVecSize - 1), std::memory_order_release);
+                vecAcc.fill(0); vecCount = 0;
+            }
+        }
         if (measuring) {
-            // K-weighting: shelf, then high-pass (transposed direct form II), on the main input
-            const double a = s0 + denormal, b = s1 + denormal;
-            double y = kb0 * a + k1L; k1L = kb1 * a - ka1 * y + k2L; k2L = kb2 * a - ka2 * y;
-            const double zl = hb0 * y + h1L; h1L = hb1 * y - ha1 * zl + h2L; h2L = hb2 * y - ha2 * zl;
-            y = kb0 * b + k1R; k1R = kb1 * b - ka1 * y + k2R; k2R = kb2 * b - ka2 * y;
-            const double zr = hb0 * y + h1R; h1R = hb1 * y - ha1 * zr + h2R; h2R = hb2 * y - ha2 * zr;
+            // K-weighting per channel: shelf, then high-pass (transposed direct form II), on the main input
+            double sum = 0;
+            for (int c = 0; c < nch; c++) {
+                if (weight[c] == 0) continue;
+                auto& z = kState[(size_t)c];
+                const double a = x[c] + denormal;
+                const double y = kb0 * a + z[0]; z[0] = kb1 * a - ka1 * y + z[1]; z[1] = kb2 * a - ka2 * y;
+                const double k = hb0 * y + z[2]; z[2] = hb1 * y - ha1 * k + z[3]; z[3] = hb2 * y - ha2 * k;
+                sum += weight[c] * k * k;
+            }
             // the 100 ms slot of this sample: by the DAW position (Timecode) or by the measured time
             const double secs = s.measure == 2 ? t.position + i / sampleRate : measuredSamples / sampleRate;
             const long long slot = (long long)std::floor(secs * 10 + 0.000001);
@@ -430,34 +545,50 @@ void Analyzer::process(const Real* inL, const Real* inR, const Real* scL, const 
                 if (slotCount > 0) finishSlot(s.span);
                 currentSlot = slot; slotSum = 0; slotCount = 0;
             }
-            slotSum += zl * zl + zr * zr; slotCount++;
+            slotSum += sum; slotCount++;
             measuredSamples++;
+            // dialog detection: the band-limited mix (5.1: mostly the centre)
+            const double d = nch == 6 ? x[2] + 0.25 * (x[0] + x[1]) : 0.5 * (x[0] + x[1]);
+            const double h = spB[0] * d + spB[1] * spHx1 + spB[2] * spHx2 - spA[0] * spHy1 - spA[1] * spHy2;
+            spHx2 = spHx1; spHx1 = d; spHy2 = spHy1; spHy1 = h + denormal;
+            const double b = spB[3] * h + spB[4] * spLx1 + spB[5] * spLx2 - spA[2] * spLy1 - spA[3] * spLy2;
+            spLx2 = spLx1; spLx1 = h; spLy2 = spLy1; spLy1 = b + denormal;
+            spBandSum += b * b; spFullSum += d * d;
+            spDecAcc += b;
+            if (++spDecCount >= spDecim) { if (spBuf.size() < 4096) spBuf.push_back(spDecAcc / spDecim); spDecAcc = 0; spDecCount = 0; }
+            spSubSum += b * b;
+            if (++spSubCount >= spSubLen) {
+                spSubDb[(size_t)spSubPos] = 10 * std::log10(spSubSum / spSubLen + 1e-20);
+                spSubPos = (spSubPos + 1) % (int)spSubDb.size(); spSubFilled++;
+                spSubSum = 0; spSubCount = 0;
+            }
         }
         if (running) {
-            // true peak per side: the samples and the points between them
-            tpHistL[(size_t)tpWrite] = s0; tpHistR[(size_t)tpWrite] = s1;
-            double pl = std::fabs(s0), pr = std::fabs(s1);
-            for (int p = 0; p < oversample; p++) {
-                double l = 0, r = 0;
-                for (int k = 0; k < 12; k++) {
-                    const double c = tpCoef[(size_t)(p + oversample * k)];
-                    const int j = (tpWrite - k) & 15;
-                    l += c * tpHistL[(size_t)j]; r += c * tpHistR[(size_t)j];
+            // true peak per channel: the samples and the points between them
+            double all = 0;
+            for (int c = 0; c < nch; c++) {
+                auto& hist = tpHist[(size_t)c];
+                hist[(size_t)tpWrite] = x[c];
+                double p = std::fabs(x[c]);
+                for (int ph = 0; ph < oversample; ph++) {
+                    double v = 0;
+                    for (int k = 0; k < 12; k++) v += tpCoef[(size_t)(ph + oversample * k)] * hist[(size_t)((tpWrite - k) & 15)];
+                    p = std::max(p, std::fabs(v));
                 }
-                pl = std::max(pl, std::fabs(l)); pr = std::max(pr, std::fabs(r));
+                pk[c] = std::max(pk[c], (float)p);
+                all = std::max(all, p);
             }
             tpWrite = (tpWrite + 1) & 15;
-            pkL = std::max(pkL, (float)pl); pkR = std::max(pkR, (float)pr);
-            if (measuring) truePeakMax = std::max(truePeakMax, std::max(pl, pr));
+            if (measuring) truePeakMax = std::max(truePeakMax, all);
         }
     }
     gonioWrite.store(gw, std::memory_order_release);
     // the meters take the peaks and set them back to 0
-    if (pkL > peakL.load(std::memory_order_relaxed)) peakL.store(pkL, std::memory_order_relaxed);
-    if (pkR > peakR.load(std::memory_order_relaxed)) peakR.store(pkR, std::memory_order_relaxed);
+    for (int c = 0; c < nch; c++)
+        if (pk[c] > peaks[(size_t)c].load(std::memory_order_relaxed)) peaks[(size_t)c].store(pk[c], std::memory_order_relaxed);
 }
 
-template void Analyzer::process<float>(const float*, const float*, const float*, const float*, int, const Settings&, const Transport&);
-template void Analyzer::process<double>(const double*, const double*, const double*, const double*, int, const Settings&, const Transport&);
+template void Analyzer::process<float>(const float* const*, int, const Settings&, const Transport&);
+template void Analyzer::process<double>(const double* const*, int, const Settings&, const Transport&);
 
 } // namespace bn

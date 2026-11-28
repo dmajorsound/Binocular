@@ -25,12 +25,12 @@ public:
 private:
     // what the mouse can point at
     enum Hit {
-        hNone = 0, hBands = 1, hSelectivity = 2, hAveraging = 3, hHold = 4, hPower = 10, hStereo = 11, hSidechain = 12,
-        hTheme = 13, hResetPlugin = 14, hBandsArea = 20, hTotal = 21, hGonio = 22, hBalance = 23, hWidth = 24,
+        hNone = 0, hBands = 1, hSelectivity = 2, hAveraging = 3, hHold = 4, hPower = 10,
+        hTheme = 13, hResetPlugin = 14, hPair0 = 15, hSurroundTag = 18, hBandsArea = 20, hTotal = 21, hGonio = 22, hBalance = 23, hWidth = 24, hVector = 25, hFrontRear = 26, hDmxCentre = 27, hDmxSurround = 28, hDmxLfe = 29, hDownmix = 37,
         hTabCorr = 30, hTabMono = 31, hRange = 32, hReference = 33, hOffset = 34, hTabGonio = 35, hTabLoud = 36,
         hUpdate = 40, hHelp = 41, hManual = 42, hHelpPanel = 43, hHelpClose = 44,
-        hTarget0 = 50, hMeasure = 56, hLoudReset = 57, hSpan = 58, hHistory = 59, hList = 69, hListItem0 = 70,
-        hReading0 = 80, hVerdict = 86, hPeaks = 87
+        hColors = 45, hTarget = 50, hMaxMomentary = 51, hMaxShort = 52, hTimecode = 53, hMeasure = 56, hLoudReset = 57, hSpan = 58, hHistory = 59, hList = 69, hListItem0 = 70,
+        hReading0 = 80, hPeaks = 87, hVerdict = 89
     };
     struct HitArea { int id; juce::Rectangle<float> r; bool round; };
 
@@ -43,10 +43,14 @@ private:
     void drawHeader(bn::Canvas& c);
     void drawBands(bn::Canvas& c);
     void drawGoniometer(bn::Canvas& c);
+    void drawVectorscope(bn::Canvas& c);
     void drawLoudness(bn::Canvas& c);
     void drawTotal(bn::Canvas& c);
     void drawControls(bn::Canvas& c);
     void drawList(bn::Canvas& c);
+    void listPick(int k);
+    bool downmixShown() const;
+    void drawDownmix(bn::Canvas& c, float x, float y);
     void drawHelp(bn::Canvas& c);
     void drawFooter(bn::Canvas& c);
     void drawStatus(bn::Canvas& c);
@@ -85,8 +89,8 @@ private:
     int lastClickId = 0;
     double lastClickTime = 0;
     bool helpOpen = false;
-    int listOpen = 0;                          // 1: history span, 2: measure
-    juce::Rectangle<float> spanBox, measureBox;
+    int listOpen = 0;                          // 1: history span, 2: measure, 3: target, 4: timecode, 5: downmix
+    juce::Rectangle<float> spanBox, measureBox, targetBox, tcBox, downmixBox;
     int hoverBand = -1;
 
     // reference curve (captured from the bands)
@@ -99,10 +103,16 @@ private:
     juce::Image gonioImage;
     juce::uint32 gonioBg = 0;
     int gonioRead = 0;
+    juce::Image vecImage;
+    juce::uint32 vecBg = 0;
+    int vecRead = 0;
+    double shapeTop = -120;                                        // the loudest speaker, for the shape's scale
+    double shapeDb[6] = { -120, -120, -120, -120, -120, -120 };   // the speaker shape: up at once, down at 24 dB per second
+    double lastVecX = std::numeric_limits<double>::quiet_NaN(), lastVecY = 0;
     double gonioPeak = 0;
 
     // peak meters
-    double peakDb[2] = { -120, -120 }, holdDb[2] = { -120, -120 }, holdTime[2] = { 0, 0 };
+    double peakDb[6] = { -120, -120, -120, -120, -120, -120 }, holdDb[6] = { -120, -120, -120, -120, -120, -120 }, holdTime[6] = {};
     std::array<float, bn::Analyzer::kSteps> stepY {};
 
     double lastFrame = 0, frameDt = 1.0 / 60;

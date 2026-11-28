@@ -14,11 +14,14 @@ struct Settings {
     int bandsIndex = 7;          // 0..9: 4, 8, 12, 16, 24, 32, 48, 64, 128, 256 bands
     double selectivity = 50;     // %
     double averagingMs = 300;
-    bool sidechain = false;      // false: left vs right, true: inputs 1/2 vs 3/4
     int hold = 1;                // 0 off, 1 three seconds, 2 infinite
     bool frozen = false;         // switched off: the meter keeps its last picture
     int measure = 1;             // loudness: 0 always, 1 while the DAW plays, 2 by timecode
     int span = 1;                // history: 0..6 = 1, 5, 15, 30 min, 1, 2, 5 h
+    double dmxCentre = 0.70710678, dmxSurround = 0.70710678, dmxLfe = 0;   // downmix gains (linear)
+    bool surround = false;       // the track is 5.1: channels come as L, R, C, LFE, Ls, Rs
+    int pair = 0;                // 5.1: what the correlation pages compare: 0 front (L / R), 1 surround (Ls / Rs),
+                                 //      2 the stereo downmix (Lo / Ro after ITU-R BS.775: centre and surrounds at -3 dB, no LFE)
 };
 
 struct Transport {
@@ -40,9 +43,9 @@ public:
     // a fresh start at this sample rate: every reading, the loudness measurement, the history
     void prepare(double sampleRate, const Settings& s);
 
+    // ch: the input, 2 channels (L, R) or 6 (L, R, C, LFE, Ls, Rs)
     template <class Real>
-    void process(const Real* inL, const Real* inR, const Real* scL, const Real* scR, int n,
-                 const Settings& s, const Transport& t);
+    void process(const Real* const* ch, int n, const Settings& s, const Transport& t);
 
     // ---- requests from the editor
     std::atomic<bool> clearLows { false };      // the held lows start again
@@ -63,19 +66,32 @@ public:
 
     // time offset and polarity between the sides
     bool offsetFound = false;
-    double offsetSamples = 0;                   // negative: the right side (or the sidechain) is late
+    double offsetSamples = 0;                   // negative: the second side (right) is late
     int polarity = 1;
 
     // goniometer: side (x) and mid (y) of the last samples, the write position
     std::array<float, kGonioSize> gonioX {}, gonioY {};
     std::atomic<int> gonioWrite { 0 };
 
+    // 5.1 vectorscope: where the sound comes from. Every 32 samples the energy vector of L, R, C, Ls, Rs
+    // (speakers at -30, +30, 0, -110, +110 degrees after ITU-R BS.775): x to the right, y to the front, length 0..1
+    // (1 = one speaker alone, toward 0 = spread over all). Silence is stored as NaN.
+    static constexpr int kVecSize = 4096;
+    std::array<float, kVecSize> vecX {}, vecY {};
+    std::atomic<int> vecWrite { 0 };
+    std::array<double, 6> channelPower {};      // per channel, averaged over 30 ms
+
     // loudness
+    int channels = 2;                           // 2 or 6 (5.1)
     bool measuring = false;
+    double dialog = -200;                       // dialog-gated integrated loudness (only the parts found to be dialog)
+    double dialogShare = 0;                     // how much of the measurement is dialog, 0..1
+    bool speechNow = false;                     // the detector hears dialog right now
     double momentary = -200, shortTerm = -200, integrated = -200, range = -1;
     double truePeakMax = 0;                     // linear, 0 = none yet
+    double momentaryMax = -200, shortTermMax = -200;
     int measuredSlots = 0;                      // 100 ms slots in the measurement
-    std::atomic<float> peakL { 0 }, peakR { 0 };  // true peak since the editor last took it
+    std::array<std::atomic<float>, 6> peaks {};   // true peak per channel since the editor last took it
     // history graph: 360 steps of momentary energy (sum and count), the newest step
     std::array<double, kSteps> stepEnergy {}, stepCount {};
     int newestStep = -1;
@@ -97,11 +113,12 @@ private:
     void loudnessFilters();
     void loudnessReset();
     void histogram(double e, double* counts, double* energies, double sign);
-    void store(long long slot, double em, double es);
+    void store(long long slot, double em, double es, bool isDialog);
     void addToHistory(double e, int span);
     void rebuildHistory(int span);
     void finishSlot(int span);
     void loudnessValues();
+    bool detectSpeech();
 
     // correlation engine
     int fftLong = 16384, hopLong = 1024, fftShort = 4096, hopShort = 512;
@@ -116,19 +133,39 @@ private:
     bool longDue = false, shortDue = false, offsetDue = false;
     double sxyAvg = 0, sxxAvg = 0, syyAvg = 0;  // the full signal
     double totalHeldTime = 0;
+    std::array<double, 6> vecAcc {};
+    int vecCount = 0;
     double denormal = 1e-18;                    // alternating -360 dB offset keeps the meter averages out of denormals
     int lastBands = -1, lastInput = -1;
     double lastSelectivity = -1, lastRate = -1;
 
     // loudness engine
     double kb0 = 0, kb1 = 0, kb2 = 0, ka1 = 0, ka2 = 0, hb0 = 1, hb1 = -2, hb2 = 1, ha1 = 0, ha2 = 0;
-    double k1L = 0, k2L = 0, k1R = 0, k2R = 0, h1L = 0, h2L = 0, h1R = 0, h2R = 0;
+    std::array<std::array<double, 4>, 6> kState {};   // K-weighting per channel: shelf z1 z2, high-pass z1 z2
     int oversample = 4;
     std::array<double, 48> tpCoef {};
-    std::array<double, 16> tpHistL {}, tpHistR {};
+    std::array<std::array<double, 16>, 6> tpHist {};
     int tpWrite = 0;
     std::vector<double> slotMom, slotShort;     // per slot of the timeline
-    std::vector<char> slotUsed;
+    std::vector<char> slotUsed, slotDialog;
+    std::array<double, kHistBins> dlgCount {}, dlgEnergy {};
+    int dialogSlots = 0;
+
+    // dialog detection: a band-limited mix (centre-weighted in 5.1), its voicing (pitch periodicity), its share of the
+    // energy and the syllable rhythm of its level. Decided per 100 ms slot, held for half a second.
+    std::array<double, 2> spHp {}, spLp {};     // band-pass 250 Hz .. 3.5 kHz, biquad states (x1, x2 / y1, y2 style below)
+    double spB[6] {}, spA[4] {};                // high-pass b0 b1 b2, low-pass b0 b1 b2 / a1 a2 each (shared form)
+    double spHx1 = 0, spHx2 = 0, spHy1 = 0, spHy2 = 0, spLx1 = 0, spLx2 = 0, spLy1 = 0, spLy2 = 0;
+    double spBandSum = 0, spFullSum = 0, spDecAcc = 0, spSubSum = 0;
+    int spDecim = 6, spDecCount = 0, spSubCount = 0, spSubLen = 1200;
+    std::vector<double> spBuf;                  // the band-limited mix at ~8 kHz, one slot
+    std::array<double, 40> spSubDb {};          // level of the last 40 sub-frames of 25 ms (1 s), dB
+    int spSubPos = 0, spSubFilled = 0;
+    std::array<char, 10> spVoiced {};           // voicing of the last 10 slots
+    int spVoicedPos = 0;
+    std::array<double, 10> spRatio {};          // speech-band share of the last 10 slots
+    std::array<double, 10> spPitch {};          // pitch of the last 10 slots, Hz (0 = not voiced)
+    double spHold = 0;                          // seconds the dialog state still holds
     std::vector<double> historyRing;            // momentary energy of every measured slot, in order
     std::array<double, kHistBins> momCount {}, momEnergy {}, stCount {}, stEnergy {};
     std::array<double, 30> last30 {};

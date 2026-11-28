@@ -49,6 +49,9 @@ void bn::Fonts::set(float usc) {
     helpTitle = make("Mulish Bold", 14 * usc);
     help = make("Mulish SemiBold", 11 * usc);
     meter = make("Red Hat Mono", 7 * usc);
+    valueBig = make("Red Hat Mono SemiBold", 16 * usc);
+    valueMid = make("Red Hat Mono SemiBold", 12 * usc);
+    valueTiny = make("Red Hat Mono SemiBold", 9 * usc);
 }
 
 // ---------------------------------------------------------------- small helpers
@@ -65,12 +68,46 @@ static String frequency(double f) {
 
 static String oneDecimal(double v) { return String(v, 1); }
 
-static const char* kTargetNames[6] = { "EBU R128", "Netflix", "Spotify", "YouTube", "Apple Music", "Tidal" };
-static double targetLufs(int p) { return p == 0 ? -23 : p == 1 ? -27 : p == 4 ? -16 : -14; }
-static double targetTolerance(int p) { return p == 0 ? 0.5 : p == 1 ? 2 : 1; }
-static int targetPeak(int p) { return p == 1 ? -2 : -1; }
+// loudness targets (parameter value = index; new ones were added at the end so saved projects keep theirs)
+struct Target { const char* name; double lufs, tol; int peak; bool dialog, streaming, film; const char* note; };
+static const Target kTargets[10] = {
+    { "EBU R128",           -23, 0.5, -1, false, false, false, "-23 LUFS \xc2\xb1" "0.5 LU  \xc2\xb7  true peak -1 dBTP" },
+    { "Netflix",            -27, 2,   -2, true,  false, true,  "-27 LKFS dialog-gated \xc2\xb1" "2 LU  \xc2\xb7  true peak -2 dBTP" },
+    { "Spotify",            -14, 1,   -1, false, true,  false, "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP" },
+    { "YouTube",            -14, 1,   -1, false, true,  false, "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP" },
+    { "Apple Music",        -16, 1,   -1, false, true,  false, "Plays at -16 LUFS  \xc2\xb7  true peak -1 dBTP" },
+    { "Tidal",              -14, 1,   -1, false, true,  false, "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP" },
+    { "Amazon Prime Video", -24, 2,   -2, true,  false, true,  "-24 LKFS dialog-gated \xc2\xb1" "2 LU (ATSC A/85)  \xc2\xb7  true peak -2 dBTP" },
+    { "ATSC A/85",          -24, 2,   -2, true,  false, false, "-24 LKFS \xc2\xb1" "2 LU, dialog for long-form  \xc2\xb7  true peak -2 dBTP" },
+    { "ARIB TR-B32",        -24, 1,   -1, false, false, false, "Japan: -24 LKFS \xc2\xb1" "1 LU  \xc2\xb7  true peak -1 dBTP" },
+    { "OP-59",              -24, 1,   -2, false, false, false, "Australia: -24 LKFS \xc2\xb1" "1 LU  \xc2\xb7  true peak -2 dBTP" },
+};
+static const int kTargetOrder[10] = { 0, 7, 8, 9, 1, 6, 2, 3, 4, 5 };   // the list: broadcast, film streaming, music streaming
+static const char* kFpsNames[6] = { "23.976", "24", "25", "29.97 DF", "29.97", "30" };
+static const char* kDownmixNames[3] = { "ITU-R BS.775", "Modern", "Manual" };
+static const char* kStartNames[3] = { "00:00:00:00", "01:00:00:00", "10:00:00:00" };
+
+// the DAW position as timecode at the chosen rate (29.97 drop frame counted as SMPTE 12M), plus a start hour
+static String timecode(double secs, int fps, int start) {
+    const bool neg = secs < 0;
+    secs = std::fabs(secs);
+    static const double rate[6] = { 24000.0 / 1001, 24, 25, 30000.0 / 1001, 30000.0 / 1001, 30 };
+    static const int base[6] = { 24, 24, 25, 30, 30, 30 };
+    long long f = (long long)std::floor(secs * rate[fps] + 0.0001);
+    if (fps == 3) {   // drop frame: frame numbers 0 and 1 are skipped every minute except every tenth
+        const long long d = f / 17982, m = f % 17982;
+        f += 18 * d + (m > 1 ? 2 * ((m - 2) / 1798) : 0);
+    }
+    const int b = base[fps];
+    const int hh = (int)(f / (3600LL * b)) + (start == 1 ? 1 : start == 2 ? 10 : 0);
+    return String(neg ? "-" : "") + String::formatted(fps == 3 ? "%02d:%02d:%02d;%02d" : "%02d:%02d:%02d:%02d",
+                                                       hh % 24, (int)(f / (60LL * b) % 60), (int)(f / b % 60), (int)(f % b));
+}
 static const char* kSpanNames[7] = { "1 min", "5 min", "15 min", "30 min", "1 h", "2 h", "5 h" };
 static const char* kMeasureNames[3] = { "Always", "Playback", "Timecode" };
+static const char* kPairNames[3] = { "Front", "Surround", "Downmix" };
+static const char* kPairFirst[3] = { "L", "Ls", "Lo" };
+static const char* kPairSecond[3] = { "R", "Rs", "Ro" };
 
 // ---------------------------------------------------------------- the window
 BinocularEditor::BinocularEditor(BinocularProcessor& p) : AudioProcessorEditor(&p), proc(p), an(p.analyzer) {
@@ -108,7 +145,7 @@ void BinocularEditor::paint(juce::Graphics& g) {
     const double now = juce::Time::getMillisecondCounterHiRes();
     frameDt = lastFrame > 0 ? juce::jlimit(1.0 / 120, 0.1, (now - lastFrame) / 1000.0) : 1.0 / 60;
     lastFrame = now;
-    th.set(proc.get(bn::pTheme) < 0.5);
+    th.set(proc.get(bn::pTheme) < 0.5, proc.get(bn::pColors) >= 0.5);
     const float w = (float)getWidth(), h = (float)getHeight();
     usc = juce::jmax(0.5f, juce::jmin(w / 680, h / 520));
     ex = juce::jmax(0.0f, h / usc - 520);
@@ -118,7 +155,8 @@ void BinocularEditor::paint(juce::Graphics& g) {
     altDown = juce::ModifierKeys::currentModifiers.isAltDown();
     hover = hitAt(mousePos);
     if (dragId) hover = dragId == hSelectivity ? (int)hBands : dragId;   // a knob being dragged stays lit
-    if (proc.get(bn::pView) < 2.5) listOpen = 0;
+    if (listOpen >= 1 && listOpen <= 4 && proc.get(bn::pView) < 2.5) listOpen = 0;
+    if (listOpen == 5 && !downmixShown()) listOpen = 0;
     hits.clear();
 
     const float scale = juce::jmax(1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
@@ -131,7 +169,7 @@ void BinocularEditor::paint(juce::Graphics& g) {
     c.colour(th.line); c.frame(ux(16), uy(52), (648 + wx) * usc, (286 + ex) * usc, 10 * usc);
     const int view = (int)std::floor(proc.get(bn::pView) + 0.5);
     if (view <= 1) drawBands(c);
-    else if (view == 2) drawGoniometer(c);
+    else if (view == 2) { if (an.channels == 6) drawVectorscope(c); else drawGoniometer(c); }
     else drawLoudness(c);
 
     // switched off: a small label at the top of the display
@@ -183,24 +221,37 @@ void BinocularEditor::drawHeader(bn::Canvas& c) {
         }
     }
 
-    // input: Stereo (L vs R) or Sidechain (this track vs inputs 3/4)
-    const bool sidechain = proc.get(bn::pInput) >= 0.5;
     const float wp = wx * usc;
-    c.colour(th.panel); c.box(ux(492) + wp, uy(12), 112 * usc, 28 * usc, 14 * usc);
-    c.colour(th.line); c.frame(ux(492) + wp, uy(12), 112 * usc, 28 * usc, 14 * usc);
-    for (int k = 0; k < 2; k++) {
-        const float sx = ux(k == 0 ? 495.0f : 547.0f) + wp, sw = (k == 0 ? 50 : 54) * usc;
-        const int id = hStereo + k;
-        addHit(id, sx, uy(15), sw, 22 * usc);
-        if (k == 0 ? !sidechain : sidechain) {
-            c.colour(th.accent2); c.box(sx, uy(15), sw, 22 * usc, 11 * usc);
-            c.colour(th.accent2Text); c.textC(fonts.tabOn, k == 0 ? "Stereo" : "Sidechain", sx + sw / 2, uy(26.5f));
-        } else {
-            if (hover == id) { c.colour(th.hover); c.box(sx, uy(15), sw, 22 * usc, 11 * usc); }
-            c.colour(hover == id ? th.text : th.muted); c.textC(fonts.body, k == 0 ? "Stereo" : "Sidechain", sx + sw / 2, uy(26.5f));
+    {
+        // the format Binocular found on this track, as a small tag after the name
+        const String tag = an.channels == 6 ? "5.1" : "Stereo";
+        // (after the tagline, so it never meets the tabs)
+        const float tagX = ux(79) + bn::Canvas::width(fonts.body, String::fromUTF8("Mmm\xe2\x80\xa6" "etering!")) + 7 * usc;
+        const float tagW = bn::Canvas::width(fonts.tiny, tag) + 12 * usc, tagY = uy(26.45f) + fonts.body.getHeight() / 2;
+        c.colour(th.accent2); c.box(tagX, tagY - 6.5f * usc, tagW, 13 * usc, 6.5f * usc);
+        c.colour(th.accent2Text); c.textC(fonts.tiny, tag, tagX + tagW / 2, tagY);
+        addHit(hSurroundTag, tagX, tagY - 6.5f * usc, tagW, 13 * usc);
+    }
+    if (an.channels == 6 && view != 2) {
+        // 5.1: what the correlation pages compare: front, surround or the downmix (the goniometer page shows the vectorscope)
+        const int pair = (int)std::floor(proc.get(bn::pPair) + 0.5);
+        c.colour(th.panel); c.box(ux(488) + wp, uy(12), 120 * usc, 28 * usc, 14 * usc);
+        c.colour(th.line); c.frame(ux(488) + wp, uy(12), 120 * usc, 28 * usc, 14 * usc);
+        static const float segX[3] = { 491, 525, 557 }, segW[3] = { 34, 32, 48 };
+        static const char* segText[3] = { "Front", "Surr.", "Downmix" };
+        for (int k = 0; k < 3; k++) {
+            const float sx = ux(segX[k]) + wp, sw = segW[k] * usc;
+            const int id = hPair0 + k;
+            addHit(id, sx, uy(15), sw, 22 * usc);
+            if (pair == k) {
+                c.colour(th.accent2); c.box(sx, uy(15), sw, 22 * usc, 11 * usc);
+                c.colour(th.accent2Text); c.textC(fonts.label, segText[k], sx + sw / 2, uy(26.5f));
+            } else {
+                if (hover == id) { c.colour(th.hover); c.box(sx, uy(15), sw, 22 * usc, 11 * usc); }
+                c.colour(hover == id ? th.text : th.muted); c.textC(fonts.small, segText[k], sx + sw / 2, uy(26.5f));
+            }
         }
     }
-
     // help: a round "?"
     const float qx = ux(627) + wp, qy = uy(26);
     addHitCircle(hHelp, qx, qy, 12 * usc);
@@ -228,13 +279,14 @@ void BinocularEditor::drawHeader(bn::Canvas& c) {
 void BinocularEditor::drawBands(bn::Canvas& c) {
     const bool mono = proc.get(bn::pView) >= 0.5;
     const float gx = ux(46), gw = (608 + wx) * usc, gy = uy(62), gh = (250 + ex) * usc;
-    const float top = mono ? 26 * usc : 0;   // mono loss: room on top for the range button
+    const bool dmx = downmixShown();
+    const float top = mono || dmx ? 26 * usc : 0;   // room on top for the range button and the downmix
     const double rangeDb = proc.get(bn::pRange) < 0.5 ? 24 : proc.get(bn::pRange) < 1.5 ? 48 : 96;
     auto map = [&](double v) {
-        return mono ? gy + top + (gh - top) * (float)juce::jlimit(0.0, 1.0, -v / rangeDb) : gy + gh * (float)(1 - v) / 2;
+        return mono ? gy + top + (gh - top) * (float)juce::jlimit(0.0, 1.0, -v / rangeDb) : gy + top + (gh - top) * (float)(1 - v) / 2;
     };
     // a faint red ground where the mono sum loses level: below 0 / below -3 dB
-    const float redTop = mono ? map(-3) : gy + gh / 2;
+    const float redTop = mono ? map(-3) : map(0);
     c.colour(th.red, th.dark ? 0.035f : 0.03f); c.rect(gx, redTop, gw, gy + gh - redTop);
     // grid and scale: five marks. Mono loss 24 dB: 0 -3 -6 -12 -24, 48 dB: 0 -6 -12 -24 -48, 96 dB: 0 -12 -24 -48 -96
     for (int k = 0; k < 5; k++) {
@@ -332,6 +384,44 @@ void BinocularEditor::drawBands(bn::Canvas& c) {
         addHit(hRange, rx, gy, rw, rh);
         button(c, rx, gy, rw, rh, false, hover == hRange, t);
     }
+    if (dmx) drawDownmix(c, gx, gy);
+}
+
+// the 5.1 downmix that the Downmix pair compares: ITU-R BS.775 or own gains (drag up and down, double-click: -3 dB)
+bool BinocularEditor::downmixShown() const {
+    return proc.surround.load() && proc.get(bn::pView) < 1.5 && std::floor(proc.get(bn::pPair) + 0.5) == 2;
+}
+
+void BinocularEditor::drawDownmix(bn::Canvas& c, float x, float y) {
+    const int mode = (int)std::floor(proc.get(bn::pDownmix) + 0.5);
+    const bool manual = mode == 2;
+    const float h = 20 * usc;
+    c.colour(th.muted); c.textL(fonts.small, "Downmix", x, y + h / 2);
+    downmixBox = { x + 58 * usc, y, 118 * usc, h };
+    addHit(hDownmix, downmixBox.getX(), y, downmixBox.getWidth(), h);
+    dropdown(c, downmixBox.getX(), y, downmixBox.getWidth(), h, hover == hDownmix || listOpen == 5, kDownmixNames[juce::jlimit(0, 2, mode)], fonts.small);
+    float fx = downmixBox.getRight() + 14 * usc;
+    if (!manual) {
+        c.colour(th.dim);
+        c.textL(fonts.note, mode == 0 ? "Lo = L + 0.707 C + 0.707 Ls, LFE not used"
+                                      : "Lo = L + 0.707 C + 0.707 Ls + 0.316 LFE  (C, Ls/Rs -3 dB, LFE -10 dB)", fx, y + h / 2);
+        return;
+    }
+    const int ids[3] = { hDmxCentre, hDmxSurround, hDmxLfe };
+    const int nums[3] = { bn::pDmxCentre, bn::pDmxSurround, bn::pDmxLfe };
+    const char* names[3] = { "C", "Ls/Rs", "LFE" };
+    for (int k = 0; k < 3; k++) {
+        const double v = proc.get(nums[k]);
+        const String t = k == 2 && v <= -39.9 ? String("off") : (v > 0 ? "+" : "") + oneDecimal(v) + " dB";
+        const float lw = bn::Canvas::width(fonts.small, names[k]) + 6 * usc, fw = 62 * usc;
+        c.colour(th.muted); c.textL(fonts.small, names[k], fx, y + h / 2);
+        const bool hot = hover == ids[k] || dragId == ids[k];
+        addHit(ids[k], fx + lw, y, fw, h);
+        c.colour(hot ? th.hover : th.panel2); c.box(fx + lw, y, fw, h, 6 * usc);
+        c.colour(hot ? th.blue : th.line); c.frame(fx + lw, y, fw, h, 6 * usc);
+        c.colour(th.text); c.textC(fonts.small, t, fx + lw + fw / 2, y + h / 2);
+        fx += lw + fw + 12 * usc;
+    }
 }
 
 // ---------------------------------------------------------------- goniometer: a square in the middle, balance on the left, width on the right
@@ -360,7 +450,10 @@ void BinocularEditor::drawGoniometer(bn::Canvas& c) {
     const float size = std::floor((262 + ex) * usc);
     const float cx = std::floor(dx + dw / 2), cy = std::floor(dy + dh / 2);
     const bool frozen = proc.get(bn::pFreeze) >= 0.5;
-    const bool sidechain = proc.get(bn::pInput) >= 0.5;
+    const bool surround = an.channels == 6;
+    const int pair = (int)std::floor(proc.get(bn::pPair) + 0.5);
+    const String first = surround ? kPairFirst[pair] : "L";
+    const String second = surround ? kPairSecond[pair] : "R";
     // the trace draws into an image in screen pixels, which fades a little every frame (afterglow)
     const float scale = 1.0f / c.hair;
     const int S = juce::jmax(8, (int)std::floor(size * scale));
@@ -416,8 +509,8 @@ void BinocularEditor::drawGoniometer(bn::Canvas& c) {
     const float r = (float)R / scale;
     c.colour(th.dim);
     c.textC(fonts.label, "M", cx, cy - r - 9 * usc);
-    c.textC(fonts.label, sidechain ? "Main" : "L", cx - r * 0.7071f - (sidechain ? 14 : 8) * usc, cy - r * 0.7071f - 6 * usc);
-    c.textC(fonts.label, sidechain ? "SC" : "R", cx + r * 0.7071f + 9 * usc, cy - r * 0.7071f - 6 * usc);
+    c.textC(fonts.label, first, cx - r * 0.7071f - (first.length() > 1 ? 14 : 8) * usc, cy - r * 0.7071f - 6 * usc);
+    c.textC(fonts.label, second, cx + r * 0.7071f + (second.length() > 1 ? 12 : 9) * usc, cy - r * 0.7071f - 6 * usc);
     c.textR(fonts.label, "+S", cx - r - 5 * usc, cy);
     c.textL(fonts.label, "-S", cx + r + 5 * usc, cy);
     const int gdb = (int)std::floor(20 * std::log10(gain) + 0.5);
@@ -434,8 +527,8 @@ void BinocularEditor::drawGoniometer(bn::Canvas& c) {
         if (an.totalValid) {
             if (k == 0) {
                 const double b = an.balanceDb;
-                v = std::fabs(b) < 0.25 ? String("Centered") : std::fabs(b) > 60 ? String(b > 0 ? "Left only" : "Right only")
-                                                                                     : String(b > 0 ? "L " : "R ") + oneDecimal(std::fabs(b)) + " dB";
+                v = std::fabs(b) < 0.25 ? String("Centered") : std::fabs(b) > 60 ? (b > 0 ? first : second) + " only"
+                                                                                     : (b > 0 ? first : second) + " " + oneDecimal(std::fabs(b)) + " dB";
                 f = juce::jlimit(-1.0, 1.0, b / 12);
             } else {
                 v = "S/M " + oneDecimal(juce::jmax(-60.0, an.widthDb)) + " dB";
@@ -456,9 +549,126 @@ void BinocularEditor::drawGoniometer(bn::Canvas& c) {
             c.colour(th.dim); c.vline(px + pw * 40 / 46, by - 2 * usc, bh + 4 * usc);   // 0 dB: side as loud as mid
         }
         c.colour(th.dim);
-        c.textL(fonts.note, k == 0 ? "L" : "mono", px, by + bh + 9 * usc);
-        c.textR(fonts.note, k == 0 ? "R" : "wide", px + pw, by + bh + 9 * usc);
+        c.textL(fonts.note, k == 0 ? first : String("mono"), px, by + bh + 9 * usc);
+        c.textR(fonts.note, k == 0 ? second : String("wide"), px + pw, by + bh + 9 * usc);
         addHit(hBalance + k, px, py - 10 * usc, pw, 76 * usc);
+    }
+}
+
+// ---------------------------------------------------------------- 5.1 vectorscope: where the sound comes from
+// The five speakers on a circle (ITU-R BS.775: C ahead, L / R at 30 degrees, Ls / Rs at 110 degrees), their levels as a
+// shape, and the energy vector as a trace with afterglow: in the middle = spread over all speakers, at the edge = one speaker.
+void BinocularEditor::drawVectorscope(bn::Canvas& c) {
+    const float dx = ux(16), dw = (648 + wx) * usc, dy = uy(52), dh = (286 + ex) * usc;
+    const float size = std::floor((262 + ex) * usc);
+    const float cx = std::floor(dx + dw / 2), cy = std::floor(dy + dh / 2) + 4 * usc;
+    const bool frozen = proc.get(bn::pFreeze) >= 0.5;
+    const float scale = 1.0f / c.hair;
+    const int S = juce::jmax(8, (int)std::floor(size * scale));
+    if (!vecImage.isValid() || vecImage.getWidth() != S || vecBg != th.panel) {
+        vecImage = juce::Image(juce::Image::ARGB, S, S, false, juce::SoftwareImageType());
+        vecImage.clear(vecImage.getBounds(), Theme::colour(th.panel));
+        vecBg = th.panel;
+    }
+    const double R = S / 2.0 - 22 * usc * scale, h2 = std::floor(S / 2.0);
+    static const float ang[5] = { -0.5236f, 0.0f, 0.5236f, 1.9199f, -1.9199f };   // L C R Rs Ls: around the circle
+    static const int chan[5] = { 0, 2, 1, 5, 4 };
+    static const char* names[5] = { "L", "C", "R", "Rs", "Ls" };
+    {
+        juce::Graphics ig(vecImage);
+        if (!frozen) { ig.setColour(Theme::colour(th.panel, (float)(1 - std::pow(0.82, frameDt * 30)))); ig.fillAll(); }
+        ig.setColour(Theme::colour(th.grid));
+        for (float f : { 1.0f / 3, 2.0f / 3 }) ig.drawEllipse((float)(h2 - R * f), (float)(h2 - R * f), (float)(2 * R * f), (float)(2 * R * f), 1.0f);
+        for (int k = 0; k < 5; k++) ig.drawLine((float)h2, (float)h2, (float)(h2 + std::sin(ang[k]) * R), (float)(h2 - std::cos(ang[k]) * R), 1.0f);
+        ig.setColour(Theme::colour(th.line));
+        ig.drawEllipse((float)(h2 - R), (float)(h2 - R), (float)(2 * R), (float)(2 * R), 1.0f);
+    }
+    // the energy vectors since the last frame, joined by lines (silence breaks the line)
+    const int write = an.vecWrite.load(std::memory_order_acquire);
+    const int mask = Analyzer::kVecSize - 1;
+    const int n = juce::jmin(2048, (write - vecRead + Analyzer::kVecSize) & mask);
+    double mx = 0, my = 0; int mn = 0;
+    if (n > 0 && !frozen) {
+        juce::Image::BitmapData bd(vecImage, juce::Image::BitmapData::readWrite);
+        const juce::Colour col = Theme::colour(th.mint, 0.8f);
+        double lx = 0, ly = 0; bool prev = false;
+        for (int i = 0; i < n; i++) {
+            const int j = (write - n + i + Analyzer::kVecSize) & mask;
+            const float vx = an.vecX[(size_t)j], vy = an.vecY[(size_t)j];
+            if (std::isnan(vx) || std::isnan(vy)) { prev = false; continue; }
+            const double x = h2 + vx * R, y = h2 - vy * R;
+            if (prev) plotLine(bd, S, S, col, lx, ly, x, y);
+            lx = x; ly = y; prev = true;
+            mx += vx; my += vy; mn++;
+        }
+    }
+    vecRead = write;
+    c.g.drawImage(vecImage, juce::Rectangle<float>(cx - (float)h2 / scale, cy - (float)h2 / scale, (float)S / scale, (float)S / scale));
+    const float r = (float)R / scale;
+
+    // the speaker levels as a shape
+    // every speaker follows its energy: up at once, down at 24 dB per second, so the shape moves with the mix
+    double db[6];
+    for (int k = 0; k < 6; k++) {
+        const double now = 10 * std::log10(an.channelPower[(size_t)k] + 1e-20);
+        if (!frozen) shapeDb[k] = juce::jmax(now, shapeDb[k] - 24 * frameDt);
+        db[k] = shapeDb[k];
+    }
+    // the scale follows the loudest speaker (falls back 3 dB per second): the shape always fills the circle,
+    // quiet mixes as well as loud ones; 36 dB under the loudest is the middle
+    double loudest = -120;
+    for (int k = 0; k < 5; k++) loudest = juce::jmax(loudest, db[chan[k]]);
+    if (!frozen) shapeTop = juce::jmax(loudest, shapeTop - 3 * frameDt);
+    juce::Path shape;
+    for (int k = 0; k < 5; k++) {
+        const float lr = r * (float)juce::jlimit(0.0, 1.0, (db[chan[k]] - shapeTop + 36) / 36);
+        const float px = cx + std::sin(ang[k]) * lr, py = cy - std::cos(ang[k]) * lr;
+        if (k == 0) shape.startNewSubPath(px, py); else shape.lineTo(px, py);
+    }
+    shape.closeSubPath();
+    c.colour(th.blue, 0.16f); c.g.fillPath(shape);
+    c.colour(th.blue, 0.9f); c.g.strokePath(shape, juce::PathStrokeType(1.4f * usc, juce::PathStrokeType::curved));
+    // where the sound sits now: the mean of this frame's vectors
+    if (mn > 0 && !frozen) { lastVecX = mx / mn; lastVecY = my / mn; }
+    if (!std::isnan(lastVecX)) { c.colour(th.text); c.disc(cx + (float)lastVecX * r, cy - (float)lastVecY * r, 3.5f * usc); }
+    // the speakers, their names and levels
+    for (int k = 0; k < 5; k++) {
+        const float sx = cx + std::sin(ang[k]) * r, sy = cy - std::cos(ang[k]) * r;
+        c.colour(th.panel); c.disc(sx, sy, 4 * usc);
+        c.colour(db[chan[k]] > -60 ? th.blue : th.dim); c.ring(sx, sy, 4 * usc, 1.4f * usc);
+        const float lx = cx + std::sin(ang[k]) * (r + 16 * usc), ly = cy - std::cos(ang[k]) * (r + 14 * usc);
+        c.colour(th.muted); c.textC(fonts.label, names[k], lx, ly);
+    }
+    c.colour(th.dim);
+    c.textR(fonts.note, "LFE " + (db[3] > -100 ? oneDecimal(db[3]) + " dB" : String("--")), dx + dw - 14 * usc, dy + dh - 14 * usc);
+    addHit(hVector, cx - size / 2, dy, size, dh);
+
+    // side panels: left / right and front / rear, each a value and a bar
+    const float pw = 150 * usc;
+    const double left = an.channelPower[0] + an.channelPower[4], right = an.channelPower[1] + an.channelPower[5];
+    const double front = an.channelPower[0] + an.channelPower[1] + an.channelPower[2], rear = an.channelPower[4] + an.channelPower[5];
+    for (int k = 0; k < 2; k++) {
+        const float px = k == 0 ? dx + 26 * usc : dx + dw - 26 * usc - pw;
+        const float py = cy - 34 * usc;
+        const double a = k == 0 ? left : front, b = k == 0 ? right : rear;
+        const bool has = a + b > 1e-10;
+        const double d = has ? 10 * std::log10((a + 1e-20) / (b + 1e-20)) : 0;
+        c.colour(th.muted); c.textC(fonts.label, k == 0 ? "Left / right" : "Front / rear", px + pw / 2, py);
+        String v = !has ? String("--") : std::fabs(d) < 0.25 ? String(k == 0 ? "Centered" : "Even")
+                 : std::fabs(d) > 60 ? String(k == 0 ? (d > 0 ? "Left only" : "Right only") : (d > 0 ? "Front only" : "Rear only"))
+                 : String(k == 0 ? (d > 0 ? "L " : "R ") : (d > 0 ? "Front " : "Rear ")) + oneDecimal(std::fabs(d)) + " dB";
+        c.colour(th.text); c.textC(fonts.value, v, px + pw / 2, py + 20 * usc);
+        const float by = py + 38 * usc, bh = 8 * usc;
+        c.colour(th.panel2); c.box(px, by, pw, bh, 4 * usc);
+        if (!th.dark) { c.colour(th.line); c.frame(px, by, pw, bh, 4 * usc); }
+        const float f = (float)juce::jlimit(-1.0, 1.0, d / 12);
+        c.colour(th.accent);
+        if (f > 0) c.box(px + pw / 2 * (1 - f), by, pw / 2 * f, bh, 4 * usc);
+        else if (f < 0) c.box(px + pw / 2, by, -pw / 2 * f, bh, 4 * usc);
+        c.colour(th.dim); c.vline(px + pw / 2, by - 2 * usc, bh + 4 * usc);
+        c.textL(fonts.note, k == 0 ? "L" : "front", px, by + bh + 9 * usc);
+        c.textR(fonts.note, k == 0 ? "R" : "rear", px + pw, by + bh + 9 * usc);
+        addHit(k == 0 ? hBalance : hFrontRear, px, py - 10 * usc, pw, 76 * usc);
     }
 }
 
@@ -468,13 +678,14 @@ void BinocularEditor::drawLoudness(bn::Canvas& c) {
     const int p = (int)std::floor(proc.get(bn::pTarget) + 0.5);
     const int span = (int)std::floor(proc.get(bn::pSpan) + 0.5);
     const int measure = (int)std::floor(proc.get(bn::pMeasure) + 0.5);
-    const double target = targetLufs(p), tol = targetTolerance(p);
-    const int peakLimit = targetPeak(p);
+    const Target& tg = kTargets[juce::jlimit(0, 9, p)];
+    const double target = tg.lufs, tol = tg.tol;
+    const int peakLimit = tg.peak;
     const double lo = target - 26, hi = target + 6;          // the scale: the target sits at 80 % of the height
     const bool live = an.measuring && proc.get(bn::pFreeze) < 0.5;
     const float wp = wx * usc;
     const float divider = ux(452) + wp;                       // the graph gets all extra width
-    const float gx0 = ux(62), gx1 = divider - 104 * usc, gw = gx1 - gx0;
+    const float gx0 = ux(62), gx1 = divider - 128 * usc, gw = gx1 - gx0;
     const float gy0 = uy(92), gy1 = uy(306 + ex), gh = gy1 - gy0;
     auto map = [&](double L) { return gy1 - gh * (float)juce::jlimit(0.0, 1.0, (L - lo) / (hi - lo)); };
 
@@ -526,9 +737,9 @@ void BinocularEditor::drawLoudness(bn::Canvas& c) {
 
     // meters right of the graph: loudness (M momentary, S short-term) on the graph's scale,
     // then the peak meters (L, R, true peak, dBFS) on their own scale
-    const float mw = 7 * usc;
+    const float mw = 11 * usc;                               // M and S: wider than the peak meters
     for (int k = 0; k < 2; k++) {
-        const float mx = gx1 + (14 + k * 12) * usc;
+        const float mx = gx1 + (12 + k * 15) * usc;
         const double v = k == 0 ? an.momentary : an.shortTerm;
         c.colour(th.panel2); c.box(mx, gy0, mw, gh, 3 * usc);
         if (!th.dark) { c.colour(th.line); c.frame(mx, gy0, mw, gh, 3 * usc); }
@@ -537,30 +748,34 @@ void BinocularEditor::drawLoudness(bn::Canvas& c) {
         c.colour(th.dim); c.textC(fonts.meter, k == 0 ? "M" : "S", mx + mw / 2, gy1 + 10 * usc);
         addHit(hReading0 + k, mx - 3 * usc, gy0, mw + 6 * usc, gh);
     }
-    // peaks: what came since the last frame, falling back 20 dB per second, the highest held for 2 s
+    // peaks: what came since the last frame, falling back 20 dB per second, the highest held for 2 s.
+    // Stereo: L, R. 5.1: L, R, C, LFE, Ls, Rs.
     const bool frozen = proc.get(bn::pFreeze) >= 0.5;
-    for (int k = 0; k < 2; k++) {
-        const float v = (k == 0 ? an.peakL : an.peakR).exchange(0.0f);
+    const int nch = an.channels;
+    static const char* chNames[6] = { "L", "R", "C", "LF", "Ls", "Rs" };
+    const float pw = nch == 6 ? 6 * usc : 7 * usc, pstep = 10 * usc;
+    for (int k = 0; k < nch; k++) {
+        const float v = an.peaks[(size_t)k].exchange(0.0f);
         const double d = v > 0.000001f ? 20 * std::log10((double)v) : -120;
         if (!frozen) {
             peakDb[k] = juce::jmax(d, peakDb[k] - 20 * frameDt);
             if (d >= holdDb[k]) { holdDb[k] = d; holdTime[k] = 0; }
             else { holdTime[k] += frameDt; if (holdTime[k] > 2) holdDb[k] = juce::jmax(peakDb[k], holdDb[k] - 20 * frameDt); }
         }
-        const float mx = gx1 + (46 + k * 10) * usc;
-        c.colour(th.panel2); c.box(mx, gy0, mw, gh, 3 * usc);
-        if (!th.dark) { c.colour(th.line); c.frame(mx, gy0, mw, gh, 3 * usc); }
+        const float mx = gx1 + (nch == 6 ? 46 : 52) * usc + k * pstep;
+        c.colour(th.panel2); c.box(mx, gy0, pw, gh, 3 * usc);
+        if (!th.dark) { c.colour(th.line); c.frame(mx, gy0, pw, gh, 3 * usc); }
         if (peakDb[k] > -60) {
             const float my = gy1 - gh * (float)juce::jmin(1.0, (peakDb[k] + 60) / 60);
             c.colour(peakDb[k] > peakLimit ? th.red : peakDb[k] > peakLimit - 6 ? th.warn : th.mint);
-            c.box(mx, my, mw, gy1 - my, 3 * usc);
+            c.box(mx, my, pw, gy1 - my, 3 * usc);
         }
         if (holdDb[k] > -60) {
             c.colour(holdDb[k] > peakLimit ? th.red : th.text, 0.9f);
-            c.rect(mx, gy1 - gh * (float)juce::jmin(1.0, (holdDb[k] + 60) / 60), mw, juce::jmax(c.hair, 1.5f * usc));
+            c.rect(mx, gy1 - gh * (float)juce::jmin(1.0, (holdDb[k] + 60) / 60), pw, juce::jmax(c.hair, 1.5f * usc));
         }
-        c.colour(th.dim); c.textC(fonts.meter, k == 0 ? "L" : "R", mx + mw / 2, gy1 + 10 * usc);
-        addHit(hPeaks, mx - 2 * usc, gy0, mw + 4 * usc, gh);
+        c.colour(th.dim); c.textC(fonts.meter, chNames[k], mx + pw / 2, gy1 + 10 * usc);
+        addHit(hPeaks, mx - 1 * usc, gy0, pw + 2 * usc, gh);
     }
     // the peak scale, right of the peak meters
     c.colour(th.dim);
@@ -574,54 +789,96 @@ void BinocularEditor::drawLoudness(bn::Canvas& c) {
     // readings, right of a divider, compact
     c.colour(th.line); c.vline(divider, uy(66), (258 + ex) * usc);
     const float xl = divider + 12 * usc, xr = ux(652) + wp, xv = xr - 42 * usc;
-    static const char* names[6] = { "Momentary", "Short-term", "Integrated", "Loudness range", "True peak max", "Timecode" };
     const double tp = an.truePeakMax > 0 ? 20 * std::log10(an.truePeakMax) : -200;
-    const double wide = p == 1 ? 20 : 15;
-    for (int k = 0; k < 6; k++) {
-        const float ry = uy(76 + k * 20.0f);
-        addHit(hReading0 + k, xl, ry - 10 * usc, xr - xl, 20 * usc);
-        c.colour(th.muted); c.textL(fonts.note, names[k], xl, ry);
-        if (k < 5) {
-            const double v = k == 0 ? an.momentary : k == 1 ? an.shortTerm : k == 2 ? an.integrated : k == 3 ? an.range : tp;
-            const String s = k == 3 ? (v >= 0 ? oneDecimal(v) : String("--")) : (v > (k == 4 ? -120 : -70) ? oneDecimal(v) : String("--"));
-            c.colour(k <= 1 && !live ? th.muted : th.text); c.textR(fonts.valueSmall, s, xv, ry);
-            c.colour(th.dim); c.textL(fonts.tiny, k == 3 ? "LU" : k == 4 ? "dBTP" : "LUFS", xv + 4 * usc, ry + 0.5f * usc);
+    const double wide = tg.film ? 20 : 15;
+    // dialog-gated targets (Netflix, Prime Video, ATSC long-form) judge the dialog once enough of it is found
+    const bool useDialog = tg.dialog && an.dialog > -70 && an.dialogShare >= 0.1;
+    const double judged = useDialog ? an.dialog : an.integrated;
+    auto judgeColour = [&](double v) {
+        return v <= -70 ? th.dim : std::fabs(v - target) <= tol ? th.mint : !tg.streaming ? th.red : v > target ? th.warn : th.blue;
+    };
+    // the two values that decide a delivery, framed at the top: integrated (blue), true peak (mint) under it
+    struct Boxed { float y, h; juce::uint32 frame; const char* label; double v; const char* unit; juce::uint32 dot; int id; };
+    const Boxed boxed[2] = {
+        { uy(66), 36 * usc, th.blue, "Integrated", an.integrated, "LUFS", useDialog ? th.dim : judgeColour(an.integrated), hReading0 + 2 },
+        { uy(108), 28 * usc, th.mint, "True peak max", tp, "dBTP", an.truePeakMax <= 0 ? th.dim : tp > peakLimit ? th.red : th.mint, hReading0 + 5 },
+    };
+    for (int k = 0; k < 2; k++) {
+        const auto& b = boxed[k];
+        const float cy = b.y + b.h / 2;
+        c.colour(b.frame); c.g.drawRoundedRectangle(xl + 0.7f * usc, b.y + 0.7f * usc, xr - xl - 1.4f * usc, b.h - 1.4f * usc, 8 * usc, 1.4f * usc);
+        c.colour(th.text); c.textL(fonts.label, b.label, xl + 10 * usc, cy);
+        const bool has = b.v > (k == 1 ? -120 : -70);
+        c.colour(th.text); c.textR(k == 0 ? fonts.valueBig : fonts.valueMid, has ? oneDecimal(b.v) : String("--"), xr - 46 * usc, cy);
+        c.colour(th.dim); c.textL(fonts.tiny, b.unit, xr - 42 * usc, cy + 0.5f * usc);
+        c.colour(b.dot); c.disc(xr - 10 * usc, cy, 3 * usc);
+        addHit(b.id, xl, b.y, xr - xl, b.h);
+    }
+    // the rest smaller, under them
+    const int rows[7] = { 0, 1, 7, 8, 3, 4, 6 };   // momentary, short-term, their maxima, dialog, range, timecode
+    for (int r = 0; r < 7; r++) {
+        const int k = rows[r];
+        const float ry = uy(148 + r * 13.0f);
+        const int id = k == 7 ? hMaxMomentary : k == 8 ? hMaxShort : k == 6 ? hTimecode : hReading0 + k;
+        addHit(id, xl, ry - 6.5f * usc, xr - xl, 13 * usc);
+        String label = k == 0 ? "Momentary" : k == 1 ? "Short-term" : k == 7 ? "Momentary max" : k == 8 ? "Short-term max"
+                     : k == 3 ? "Dialog" : k == 4 ? "Loudness range" : "Timecode";
+        if (k == 3 && an.measuredSlots > 0) label << " (" << (int)std::floor(an.dialogShare * 100 + 0.5) << " %)";
+        if (k == 6) label << " " << kFpsNames[juce::jlimit(0, 5, (int)std::floor(proc.get(bn::pFps) + 0.5))];
+        c.colour(k == 6 && (hover == id || listOpen == 4) ? th.text : th.muted); c.textL(fonts.tiny, label, xl, ry);
+        if (k != 6) {
+            const double v = k == 0 ? an.momentary : k == 1 ? an.shortTerm : k == 7 ? an.momentaryMax : k == 8 ? an.shortTermMax : k == 3 ? an.dialog : an.range;
+            const String vs = k == 4 ? (v >= 0 ? oneDecimal(v) : String("--")) : (v > -70 ? oneDecimal(v) : String("--"));
+            c.colour(k <= 1 && !live ? th.muted : th.text); c.textR(fonts.valueTiny, vs, xr - 46 * usc, ry);
+            c.colour(th.dim); c.textL(fonts.tiny, k == 4 ? "LU" : "LUFS", xr - 42 * usc, ry + 0.5f * usc);
             juce::uint32 col;
-            if (k == 2) col = v <= -70 ? th.dim : std::fabs(v - target) <= tol ? th.mint : p <= 1 ? th.red : v > target ? th.warn : th.blue;
-            else if (k <= 1) col = th.loudness(v, target, tol);
-            else if (k == 3) col = an.range < 0 ? th.dim : an.range > wide ? th.warn : th.mint;
-            else col = an.truePeakMax <= 0 ? th.dim : tp > peakLimit ? th.red : th.mint;
-            c.colour(col); c.disc(xr - 4 * usc, ry, 3 * usc);
+            if (k == 3) col = v <= -70 ? th.dim : tg.dialog ? judgeColour(v) : th.loudness(v, target, tol);
+            else if (k <= 1 || k >= 7) col = th.loudness(v, target, tol);
+            else col = an.range < 0 ? th.dim : an.range > wide ? th.warn : th.mint;
+            c.colour(col); c.disc(xr - 10 * usc, ry, 2.5f * usc);
         } else {
-            // the DAW position as timecode, 25 frames per second (without the DAW's own start offset)
+            // the DAW position as timecode (without the DAW's own start offset); click: rate and start
             double secs = 0;
             if (auto* ph = proc.getPlayHead()) if (auto p2 = ph->getPosition()) if (auto t = p2->getTimeInSeconds()) secs = *t;
-            const long long fr = (long long)std::floor(std::fabs(secs) * 25 + 0.0001);
-            const String tc = String(secs < 0 ? "-" : "") + String::formatted("%02d:%02d:%02d:%02d", (int)(fr / 90000), (int)(fr / 1500 % 60), (int)(fr / 25 % 60), (int)(fr % 25));
-            c.colour(th.blue); c.textR(fonts.timecode, tc, xr, ry);
+            tcBox = { xl, ry - 6.5f * usc, xr - xl, 13 * usc };
+            c.colour(th.blue);
+            c.textR(fonts.valueTiny, timecode(secs, juce::jlimit(0, 5, (int)std::floor(proc.get(bn::pFps) + 0.5)),
+                                              juce::jlimit(0, 2, (int)std::floor(proc.get(bn::pTcStart) + 0.5))), xr - 4 * usc, ry);
         }
     }
 
     // the verdict: three lines that say what the numbers mean for the chosen target
-    const String name = kTargetNames[p];
-    const float cy0 = uy(194), ch = (130 + ex) * usc;
+    const String name = tg.name;
+    const float cy0 = uy(244), ch = (80 + ex) * usc;
     c.colour(th.panel2); c.box(xl, cy0, xr - xl, ch, 10 * usc);
     if (!th.dark) { c.colour(th.line); c.frame(xl, cy0, xr - xl, ch, 10 * usc); }
     addHit(hVerdict, xl, cy0, xr - xl, ch);
     for (int k = 0; k < 3; k++) {
-        const float ry = cy0 + (17 + k * 40) * usc;
+        const float ry = cy0 + (12 + k * 25) * usc;
         juce::uint32 col; String head, detail;
         if (k == 0) {
-            if (an.integrated <= -70) {
+            if (judged <= -70) {
                 col = th.dim; head = "Waiting for audio";
                 detail = live ? "measuring ..." : measure >= 1 ? "starts when the DAW plays" : "no signal yet";
             } else {
-                const double dev = an.integrated - target;
-                if (std::fabs(dev) <= tol) {
+                const double dev = judged - target;
+                // dialog-gated targets: the dialog value; little dialog found: the full mix, and it says so
+                const String tolText = String::fromUTF8(" \xc2\xb1") + (tol < 1 ? "0.5" : tol < 1.5 ? "1" : "2");
+                if (tg.dialog) {
+                    const String lu = oneDecimal(std::fabs(dev)) + " LU";
+                    if (std::fabs(dev) <= tol) {
+                        col = th.mint; head = "On target";
+                        detail = useDialog ? "dialog " + String(dev >= 0 ? "+" : "-") + lu + " from " + String((int)target) + tolText
+                                           : "full mix " + String(dev >= 0 ? "+" : "-") + lu + ", little dialog";
+                    } else {
+                        col = th.red; head = dev > 0 ? "Too loud" : "Too quiet";
+                        detail = useDialog ? "dialog " + lu + (dev > 0 ? " over " : " under ") + String((int)target) + (dev > 0 ? ", turn down" : ", turn up")
+                                           : "full mix " + lu + (dev > 0 ? " over" : " under") + ", little dialog";
+                    }
+                } else if (std::fabs(dev) <= tol) {
                     col = th.mint; head = "On target";
-                    detail = String(dev >= 0 ? "+" : "") + oneDecimal(dev) + " LU from " + name + " (" + String((int)target)
-                           + String::fromUTF8(" \xc2\xb1") + (tol < 1 ? "0.5" : tol < 1.5 ? "1" : "2") + ")";
-                } else if (p >= 2) {
+                    detail = String(dev >= 0 ? "+" : "") + oneDecimal(dev) + " LU from " + name + " (" + String((int)target) + tolText + ")";
+                } else if (tg.streaming) {
                     if (dev > 0) { col = th.warn; head = "Turned down"; detail = name + " plays it " + oneDecimal(dev) + " dB quieter"; }
                     else { col = th.blue; head = "Below target"; detail = oneDecimal(-dev) + " LU under " + String((int)target) + ", may sound quiet"; }
                 } else {
@@ -639,12 +896,12 @@ void BinocularEditor::drawLoudness(bn::Canvas& c) {
             else if (an.range > wide) { col = th.warn; head = "Wide loudness range"; detail = oneDecimal(an.range) + " LU, quiet parts may get lost"; }
             else {
                 col = th.mint; head = "Loudness range";
-                detail = oneDecimal(an.range) + " LU, " + (an.range < 4 ? "very even" : an.range < 8 ? "even" : p == 1 ? "fine for film" : "natural dynamics");
+                detail = oneDecimal(an.range) + " LU, " + (an.range < 4 ? "very even" : an.range < 8 ? "even" : tg.film ? "fine for film" : "natural dynamics");
             }
         }
         c.colour(col); c.disc(xl + 13 * usc, ry, 3 * usc);
         c.colour(th.text); c.textL(fonts.label, head, xl + 23 * usc, ry);
-        c.colour(th.muted); c.textL(fonts.tiny, detail, xl + 23 * usc, ry + 14 * usc);
+        c.colour(th.muted); c.textL(fonts.tiny, detail, xl + 23 * usc, ry + 11 * usc);
     }
 }
 
@@ -731,22 +988,14 @@ void BinocularEditor::drawControls(bn::Canvas& c) {
     const int view = (int)std::floor(proc.get(bn::pView) + 0.5);
 
     if (view == 3) {
-        // target presets
-        const int p = (int)std::floor(proc.get(bn::pTarget) + 0.5);
-        for (int k = 0; k < 6; k++) {
-            const float sx = ux(28 + k * 70.0f);
-            addHit(hTarget0 + k, sx, by, 64 * usc, bh);
-            button(c, sx, by, 64 * usc, bh, p == k, hover == hTarget0 + k, kTargetNames[k]);
-        }
-        c.colour(th.muted); c.textC(fonts.label, "Target", ux(235), labelY);
-        static const char* notes[6] = {
-            "-23 LUFS \xc2\xb1" "0.5 LU  \xc2\xb7  true peak -1 dBTP",
-            "-27 LKFS \xc2\xb1" "2 LU  \xc2\xb7  true peak -2 dBTP  \xc2\xb7  full mix, not dialog-gated",
-            "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP",
-            "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP",
-            "Plays at -16 LUFS  \xc2\xb7  true peak -1 dBTP",
-            "Plays at -14 LUFS  \xc2\xb7  true peak -1 dBTP" };
-        c.colour(th.text); c.textC(fonts.small, String::fromUTF8(notes[p]), ux(235), noteY);
+        // target: a list of the specs, the chosen one's values next to it
+        const Target& tg = kTargets[juce::jlimit(0, 9, (int)std::floor(proc.get(bn::pTarget) + 0.5))];
+        targetBox = { ux(28), by, 150 * usc, bh };
+        c.colour(th.muted); c.textC(fonts.label, "Target", targetBox.getCentreX(), labelY);
+        addHit(hTarget, targetBox.getX(), by, targetBox.getWidth(), bh);
+        dropdown(c, targetBox.getX(), by, targetBox.getWidth(), bh, hover == hTarget || listOpen == 3, tg.name, fonts.small);
+        c.colour(th.text); c.textL(fonts.small, String::fromUTF8(tg.note), ux(190), by + bh / 2);
+        if (tg.dialog) { c.colour(th.muted); c.textL(fonts.note, "Dialog found by Binocular. For delivery, check with Dolby's meter.", targetBox.getX() + 4 * usc, noteY); }
         // measure: Always / Playback / Timecode
         const int m = (int)std::floor(proc.get(bn::pMeasure) + 0.5);
         measureBox = { ux(466) + std::floor(wp * 3 / 4), by, 80 * usc, bh };
@@ -777,7 +1026,10 @@ void BinocularEditor::drawControls(bn::Canvas& c) {
     knob(c, hAveraging, ux(190) + std::floor(wp / 4), ky, kr, knobFraction(hAveraging), "Averaging", v3);
 
     // offset: info only, the audio is never moved
-    const bool sidechain = proc.get(bn::pInput) >= 0.5;
+    const bool surround = an.channels == 6;
+    const int pair = (int)std::floor(proc.get(bn::pPair) + 0.5);
+    const String first = surround ? kPairFirst[pair] : "left";
+    const String second = surround ? kPairSecond[pair] : "right";
     const float ofx = ux(272) + std::floor(wp / 2), ofw = 140 * usc, ofy = uy(396 + ex), ofh = 46 * usc;
     c.colour(th.muted); c.textC(fonts.label, "Offset", ofx + ofw / 2, labelY);
     c.colour(th.panel2); c.box(ofx, ofy, ofw, ofh, 8 * usc);
@@ -791,7 +1043,7 @@ void BinocularEditor::drawControls(bn::Canvas& c) {
         const String dot = String::fromUTF8(" \xc2\xb7 ");
         o2 = smp == 0 ? "0 samples" + dot + "in time"
                       : String(smp) + (smp == 1 ? " sample" : " samples") + dot
-                        + (an.offsetSamples < 0 ? (sidechain ? "sidechain is late" : "right is late") : (sidechain ? "main is late" : "left is late"));
+                        + (an.offsetSamples < 0 ? second : first) + " is late";
     } else {
         o1 = "--";
         o2 = an.totalValid ? "no clear offset" : "no signal to compare";
@@ -830,23 +1082,64 @@ void BinocularEditor::drawControls(bn::Canvas& c) {
 // ---------------------------------------------------------------- dropdown lists (over everything below them)
 void BinocularEditor::drawList(bn::Canvas& c) {
     if (!listOpen) return;
-    const int n = listOpen == 1 ? 7 : 3;
-    const int sel = (int)std::floor(proc.get(listOpen == 1 ? bn::pSpan : bn::pMeasure) + 0.5);
-    const juce::Rectangle<float> owner = listOpen == 1 ? spanBox : measureBox;
-    const float lw = listOpen == 1 ? 72 * usc : owner.getWidth(), lh = (n * 20 + 8) * usc;
+    // items (an empty name is a section title, the text after it), the chosen ones and where the list sits
+    struct Item { String text; bool title; bool on; };
+    std::vector<Item> items;
+    juce::Rectangle<float> owner;
+    float lw = 0;
+    bool up = false;
+    const auto choice = [&](int number) { return (int)std::floor(proc.get(number) + 0.5); };
+    if (listOpen == 1) { for (int k = 0; k < 7; k++) items.push_back({ kSpanNames[k], false, k == choice(bn::pSpan) }); owner = spanBox; lw = 72 * usc; }
+    else if (listOpen == 2) { for (int k = 0; k < 3; k++) items.push_back({ kMeasureNames[k], false, k == choice(bn::pMeasure) }); owner = measureBox; up = true; }
+    else if (listOpen == 3) {
+        const char* groups[3] = { "Broadcast", "Film and series", "Music streaming" };
+        for (int k = 0; k < 10; k++) {
+            if (k == 0 || k == 4 || k == 6) items.push_back({ groups[k == 0 ? 0 : k == 4 ? 1 : 2], true, false });
+            items.push_back({ kTargets[kTargetOrder[k]].name, false, kTargetOrder[k] == choice(bn::pTarget) });
+        }
+        owner = targetBox; up = true;
+    } else if (listOpen == 4) {
+        items.push_back({ "Frame rate", true, false });
+        for (int k = 0; k < 6; k++) items.push_back({ kFpsNames[k], false, k == choice(bn::pFps) });
+        items.push_back({ "Start", true, false });
+        for (int k = 0; k < 3; k++) items.push_back({ kStartNames[k], false, k == choice(bn::pTcStart) });
+        owner = { tcBox.getRight() - 120 * usc, tcBox.getY(), 120 * usc, tcBox.getHeight() };
+    } else {
+        for (int k = 0; k < 3; k++) items.push_back({ kDownmixNames[k], false, choice(bn::pDownmix) == k });
+        owner = downmixBox;
+    }
+    if (lw <= 0) lw = owner.getWidth();
+    float lh = 8 * usc;
+    for (auto& it : items) lh += (it.title ? 18 : 20) * usc;
     const float lx = owner.getX();
-    const float ly = listOpen == 1 ? owner.getBottom() + 4 * usc : owner.getY() - lh - 4 * usc;   // the measure list opens upward
+    float ly = up ? owner.getY() - lh - 4 * usc : owner.getBottom() + 4 * usc;
+    if (listOpen == 4) ly = juce::jmax(uy(56), juce::jmin(owner.getBottom() + 4 * usc, uy(332 + ex) - lh));   // stays inside the display
     c.colour(th.panel); c.box(lx, ly, lw, lh, 8 * usc);
     c.colour(th.line); c.frame(lx, ly, lw, lh, 8 * usc);
     addHit(hList, lx, ly, lw, lh);
-    for (int k = 0; k < n; k++) {
-        const float iy = ly + (4 + k * 20) * usc;
+    float iy = ly + 4 * usc;
+    int k = 0;
+    for (auto& it : items) {
+        if (it.title) {
+            c.colour(th.dim); c.textL(fonts.note, it.text, lx + 12 * usc, iy + 10 * usc);
+            iy += 18 * usc;
+            continue;
+        }
         addHit(hListItem0 + k, lx, iy, lw, 20 * usc);
         if (hover == hListItem0 + k) { c.colour(th.hover); c.box(lx + 4 * usc, iy, lw - 8 * usc, 20 * usc, 6 * usc); }
-        const String t = listOpen == 1 ? kSpanNames[k] : kMeasureNames[k];
-        if (k == sel) { c.colour(th.blue); c.textL(fonts.tabOn, t, lx + 12 * usc, iy + 10 * usc); }
-        else { c.colour(th.text); c.textL(fonts.small, t, lx + 12 * usc, iy + 10 * usc); }
+        if (it.on) { c.colour(th.blue); c.textL(fonts.tabOn, it.text, lx + 12 * usc, iy + 10 * usc); }
+        else { c.colour(th.text); c.textL(fonts.small, it.text, lx + 12 * usc, iy + 10 * usc); }
+        iy += 20 * usc;
+        k++;
     }
+}
+
+void BinocularEditor::listPick(int k) {
+    if (listOpen == 1) proc.set(bn::pSpan, k);
+    else if (listOpen == 2) proc.set(bn::pMeasure, k);
+    else if (listOpen == 3) proc.set(bn::pTarget, kTargetOrder[juce::jlimit(0, 9, k)]);
+    else if (listOpen == 4) { if (k < 6) proc.set(bn::pFps, k); else proc.set(bn::pTcStart, k - 6); }
+    else if (listOpen == 5) proc.set(bn::pDownmix, k);
 }
 
 // ---------------------------------------------------------------- help panel: over the display, a short guide and "Read Manual"
@@ -872,13 +1165,19 @@ void BinocularEditor::drawHelp(bn::Canvas& c) {
     c.textL(fonts.small, "Goniometer: the stereo image as a trace, the correlation of the full signal below.", x, y); y += 22 * usc;
     c.textL(fonts.small, "Loudness: momentary, short-term, integrated, range and true peak against a target. The graph", x, y); y += 16 * usc;
     c.textL(fonts.small, "shows the history, as much time as set top left. Timecode measures by the DAW position.", x, y); y += 22 * usc;
-    c.textL(fonts.small, "Stereo compares left and right. Sidechain compares this track with inputs 3/4.", x, y); y += 22 * usc;
+    c.textL(fonts.small, "On a 5.1 track Binocular switches to 5.1 by itself: compare front, surround or the downmix.", x, y); y += 22 * usc;
     c.colour(th.muted); c.textL(fonts.small, "Move the mouse over any control: its explanation shows at the bottom left.", x, y);
     // Read Manual
     const float mw = 120 * usc, mh = 24 * usc, mx = px + pw - mw - 20 * usc, my = py + ph - mh - 16 * usc;
     addHit(hManual, mx, my, mw, mh);
     c.colour(hover == hManual ? Theme::mix(th.accent, 0xFFFFFF, 0.25) : th.accent); c.box(mx, my, mw, mh, mh / 2);
     c.colour(th.accentText); c.textC(fonts.tabOn, "Read Manual", mx + mw / 2, my + mh / 2);
+    // colors: standard or colorblind-safe
+    const bool safe = proc.get(bn::pColors) >= 0.5;
+    const String ct = safe ? "Colors: Colorblind-safe" : "Colors: Standard";
+    const float cw = bn::Canvas::width(fonts.small, ct) + 24 * usc;
+    addHit(hColors, x, my, cw, mh);
+    button(c, x, my, cw, mh, safe, hover == hColors, ct);
 }
 
 // ---------------------------------------------------------------- footer: the same in every dmajorsound plugin
@@ -936,7 +1235,7 @@ void BinocularEditor::drawFooter(bn::Canvas& c) {
 void BinocularEditor::drawStatus(bn::Canvas& c) {
     const float x = ux(16), y = uy(483 + ex);
     const int view = (int)std::floor(proc.get(bn::pView) + 0.5);
-    const bool frozen = proc.get(bn::pFreeze) >= 0.5, sidechain = proc.get(bn::pInput) >= 0.5, dark = th.dark;
+    const bool frozen = proc.get(bn::pFreeze) >= 0.5, dark = th.dark, surround = an.channels == 6;
     const int measure = (int)std::floor(proc.get(bn::pMeasure) + 0.5);
     const bool selectivity = dragId == hSelectivity || (hover == hBands && altDown);
     String s;
@@ -947,8 +1246,11 @@ void BinocularEditor::drawStatus(bn::Canvas& c) {
     else if (hv == hAveraging) s = "Averaging: mids and highs need at least 0.1 s, the bass about 0.3 s.";
     else if (hv == hHold) s = "Hold lows: keeps the lowest reading of each band for 3 s. Shift-click holds until you click the display.";
     else if (hv == hPower) s = frozen ? "Off: the meter shows its last picture. Click to switch it on." : "On: the meter runs. Off keeps the last picture to read it. The audio always passes untouched.";
-    else if (hv == hStereo) s = "Stereo: compares left and right of this track.";
-    else if (hv == hSidechain) s = "Sidechain: compares this track (inputs 1/2) with inputs 3/4, e.g. boom vs. lav. Loudness stays on 1/2.";
+    else if (hv == hPair0) s = "Front: compares L and R of the 5.1 track.";
+    else if (hv == hPair0 + 1) s = "Surround: compares Ls and Rs of the 5.1 track.";
+    else if (hv == hPair0 + 2) s = String::fromUTF8("Downmix: compares Lo and Ro of the stereo downmix (centre and surrounds at -3 dB, no LFE), as a stereo listener hears it.");
+    else if (hv == hSurroundTag) s = surround ? "5.1: Binocular found a 5.1 track and measures all six channels. On a stereo track it measures stereo."
+                                              : "Stereo: Binocular found a stereo track. On a 5.1 track it switches to 5.1 by itself.";
     else if (hv == hTheme) s = dark ? "Dark mode. Click for light." : "Light mode. Click for dark.";
     else if (hv == hHelp) s = helpOpen ? "Help: click to close it." : "Help: a short guide and the manual.";
     else if (hv == hManual) s = "Read Manual: opens the Binocular manual on dmajorsound.com in your browser.";
@@ -969,24 +1271,28 @@ void BinocularEditor::drawStatus(bn::Canvas& c) {
     else if (hv == hResetPlugin) s = "Reset plugin: every setting back to its default, holds, reference and loudness cleared.";
     else if (hv == hTabCorr) s = "Correlation: +1 in phase, 0 unrelated, -1 out of phase.";
     else if (hv == hTabMono) s = "Mono loss: how many dB each band drops when the two sides are summed to mono.";
-    else if (hv == hTabGonio) s = "Goniometer: the stereo image as a trace. Correlation stays below.";
+    else if (hv == hTabGonio) s = surround ? "Goniometer: in 5.1 a vectorscope of all five speakers. Correlation stays below." : "Goniometer: the stereo image as a trace. Correlation stays below.";
     else if (hv == hTabLoud) s = "Loudness: momentary, short-term, integrated, range and true peak, with a graph of the history.";
     else if (hv == hGonio) s = "Upright line: mono. Lying flat: out of phase. Round cloud: wide and unrelated. Leaning: one side louder.";
-    else if (hv == hBalance) s = "Balance: how much louder one side is than the other.";
+    else if (hv == hBalance) s = surround ? "Left / right: L and Ls against R and Rs." : "Balance: how much louder one side is than the other.";
+    else if (hv == hFrontRear) s = "Front / rear: L, C and R against Ls and Rs.";
+    else if (hv == hVector) s = "Vectorscope: where the sound comes from. Blue shape: the level of each speaker. Trace: at the edge one speaker, in the middle all.";
     else if (hv == hWidth) s = "Width: side against mid. Very low is mono, around 0 dB is very wide, above 0 dB the sides work against each other.";
     else if (hv == hRange) s = "Range: how deep the mono loss scale reaches. Click for 24, 48 or 96 dB.";
     else if (hv == hReference) s = refOn ? "Reference: click to clear the line." : "Reference: keeps the current curve as a line, to compare before and after.";
     else if (hv == hOffset) s = "Offset: the time shift between the two sides, found across the spectrum. Info only, the audio is not moved.";
-    else if (hv >= hTarget0 && hv <= hTarget0 + 5) {
-        static const char* t[6] = {
-            "EBU R128: European broadcast, -23 LUFS integrated within \xc2\xb1" "0.5 LU, true peak at most -1 dBTP.",
-            "Netflix: -27 LKFS \xc2\xb1" "2 LU, true peak -2 dBTP. Netflix gates on dialog; this meter measures the full mix.",
-            "Spotify: plays everything at about -14 LUFS. Louder masters are turned down.",
-            "YouTube: plays at about -14 LUFS. Louder uploads are turned down, quieter ones stay quiet.",
-            "Apple Music: Sound Check plays at about -16 LUFS.",
-            "Tidal: plays at about -14 LUFS. Louder masters are turned down." };
-        s = String::fromUTF8(t[hv - hTarget0]);
-    }
+    else if (hv == hTarget) s = "Target: the delivery spec the verdict and the colors judge against. Click for the list.";
+    else if (listOpen == 3 && hv >= hListItem0 && hv <= hListItem0 + 9) s = String::fromUTF8(kTargets[kTargetOrder[hv - hListItem0]].note);
+    else if (hv == hMaxMomentary) s = "Momentary max: the loudest 400 ms since the last reset.";
+    else if (hv == hMaxShort) s = "Short-term max: the loudest 3 seconds since the last reset. Some specs limit it, e.g. for commercials.";
+    else if (hv == hTimecode || (listOpen == 4 && hv >= hListItem0 && hv <= hListItem0 + 8))
+        s = "Timecode: the DAW position at the chosen frame rate, plus a start hour. Click to set them.";
+    else if (hv == hDownmix || (listOpen == 5 && hv >= hListItem0 && hv <= hListItem0 + 2))
+        s = "Downmix: how Lo/Ro are made. ITU-R BS.775: C and surrounds -3 dB, no LFE. Modern: also LFE at -10 dB. Manual: own gains.";
+    else if (hv == hDmxCentre) s = "Center into Lo and Ro. Drag up or down, Shift for fine steps, double-click for -3 dB.";
+    else if (hv == hDmxSurround) s = "Ls into Lo and Rs into Ro. Drag up or down, Shift for fine steps, double-click for -3 dB.";
+    else if (hv == hDmxLfe) s = "LFE into Lo and Ro. All the way down is off. Double-click: off.";
+    else if (hv == hColors) s = "Colors: Colorblind-safe uses a palette that stays apart with red-green color blindness.";
     else if (hv == hMeasure || (listOpen == 2 && hv >= hListItem0 && hv <= hListItem0 + 2))
         s = "Measure: Always (everything that comes in), Playback (only while the DAW plays) or Timecode (by DAW position).";
     else if (hv == hLoudReset) s = "Reset: starts a new loudness measurement. Momentary, short-term, integrated, range, true peak and history.";
@@ -995,12 +1301,15 @@ void BinocularEditor::drawStatus(bn::Canvas& c) {
     else if (hv == hHistory) s = "History: the loudness over time, now on the right. Mint band: target and tolerance. Amber and red louder, blue quieter.";
     else if (hv == hReading0) s = "Momentary: the loudness of the last 400 ms. The M meter next to the graph shows it too.";
     else if (hv == hReading0 + 1) s = "Short-term: the loudness of the last 3 seconds. The S meter next to the graph shows it too.";
-    else if (hv == hReading0 + 2) s = "Integrated: the loudness of everything measured, with the EBU R128 gates (-70 LUFS, -10 LU).";
-    else if (hv == hReading0 + 3) s = "Loudness range: how far the quiet and loud parts lie apart (EBU Tech 3342, 10th to 95th percentile).";
-    else if (hv == hReading0 + 4) s = "True peak max: the highest peak, also between the samples (oversampled as in ITU-R BS.1770).";
-    else if (hv == hReading0 + 5) s = "Timecode: the position of the DAW, 25 frames per second, counted from the project start.";
+    else if (hv == hReading0 + 2) s = surround ? "Integrated: all of the 5.1 measured, with the EBU R128 gates (-70 LUFS, -10 LU). Surrounds +1.5 dB, LFE not counted."
+                                                 : "Integrated: the loudness of everything measured, with the EBU R128 gates (-70 LUFS, -10 LU).";
+    else if (hv == hReading0 + 3) s = "Dialog: the loudness of the parts Binocular hears as dialog, and their share. Its own detector, close to Dolby's, not the same.";
+    else if (hv == hReading0 + 4) s = "Loudness range: how far the quiet and loud parts lie apart (EBU Tech 3342, 10th to 95th percentile).";
+    else if (hv == hReading0 + 5) s = "True peak max: the highest peak, also between the samples (oversampled as in ITU-R BS.1770).";
+    else if (hv == hReading0 + 6) s = "Timecode: the position of the DAW, 25 frames per second, counted from the project start.";
     else if (hv == hVerdict) s = "The verdict: what the numbers mean for the chosen target.";
-    else if (hv == hPeaks) s = "Peak meters: left and right in dBFS, true peak (also between the samples). Red is above the target's limit.";
+    else if (hv == hPeaks) s = surround ? "Peak meters: L, R, C, LFE, Ls, Rs in dBFS, true peak. Red is above the target's limit."
+                                         : "Peak meters: left and right in dBFS, true peak (also between the samples). Red is above the target's limit.";
     else if (hv == hBandsArea && hoverBand >= 0) {
         const int b = hoverBand;
         const String head = frequency(an.centerHz[(size_t)b]) + " (" + frequency(an.lowHz * std::pow(an.highHz / an.lowHz, (double)b / an.bands))
@@ -1016,9 +1325,9 @@ void BinocularEditor::drawStatus(bn::Canvas& c) {
                           : measure >= 1 ? "Playback: measures while the DAW plays and pauses when it stops."
                                          : "Always: measures everything that comes in, also when the DAW stands still.";
     else if (an.offsetFound && an.polarity < 0) { col = th.red; s = "Polarity flipped: the two sides work against each other. Flip the phase of one side."; }
-    else if (sidechain && an.levelR <= -100 && an.levelL > -100) s = "No signal on the sidechain. Route the second source to inputs 3/4 of this track.";
-    else if (!sidechain && (an.levelL > -100) != (an.levelR > -100)) s = "Only one side carries signal, so there is nothing to compare.";
-    else s = view == 2 ? "Goniometer: the trace takes the color of the correlation. The bar below is the correlation of the full signal."
+    else if ((an.levelL > -100) != (an.levelR > -100)) s = "Only one side carries signal, so there is nothing to compare.";
+    else s = view == 2 && surround ? "5.1 vectorscope: the five speakers around you, their levels as a shape, the trace shows where the sound sits."
+           : view == 2 ? "Goniometer: the trace takes the color of the correlation. The bar below is the correlation of the full signal."
            : view == 1 ? "Mono loss: 0 dB keeps its level in mono, -3 dB is two unrelated sides, deeper means the sides cancel."
                        : "+1 in phase, 0 unrelated, -1 out of phase (cancels in mono). Mint and blue hold up in mono, coral and red lose level.";
     c.colour(col); c.textL(fonts.small, s, x, y);
@@ -1031,8 +1340,9 @@ void BinocularEditor::mouseDown(const juce::MouseEvent& e) {
     const int id = hitAt(e.position);
     if (listOpen) {
         // an open list: a click picks an item or closes it, nothing below reacts
-        if (id >= hListItem0 && id <= hListItem0 + 6) proc.set(listOpen == 1 ? bn::pSpan : bn::pMeasure, id - hListItem0);
-        listOpen = (id == hMeasure && listOpen != 2) ? 2 : (id == hSpan && listOpen != 1) ? 1 : 0;
+        if (id >= hListItem0 && id <= hListItem0 + 9) listPick(id - hListItem0);
+        const int owner = id == hSpan ? 1 : id == hMeasure ? 2 : id == hTarget ? 3 : id == hTimecode ? 4 : id == hDownmix ? 5 : 0;
+        listOpen = owner && owner != listOpen ? owner : 0;
         repaint();
         return;
     }
@@ -1061,8 +1371,7 @@ void BinocularEditor::mouseDown(const juce::MouseEvent& e) {
         case hHelpClose: helpOpen = false; break;
         case hUpdate: updateClick(); break;
         case hPower: proc.set(bn::pFreeze, proc.get(bn::pFreeze) >= 0.5 ? 0 : 1); break;
-        case hStereo: proc.set(bn::pInput, 0); clear(); break;
-        case hSidechain: proc.set(bn::pInput, 1); clear(); break;
+        case hPair0: case hPair0 + 1: case hPair0 + 2: proc.set(bn::pPair, id - hPair0); clear(); break;
         case hTheme: proc.set(bn::pTheme, th.dark ? 1 : 0); break;
         case hResetPlugin:
             for (const auto& info : bn::kParams)
@@ -1084,10 +1393,26 @@ void BinocularEditor::mouseDown(const juce::MouseEvent& e) {
             break;
         case hMeasure: listOpen = 2; break;
         case hSpan: listOpen = 1; break;
-        case hLoudReset: an.resetLoudness = true; break;   // a new loudness measurement
-        default:
-            if (id >= hTarget0 && id <= hTarget0 + 5) proc.set(bn::pTarget, id - hTarget0);
+        case hTarget: listOpen = 3; break;
+        case hTimecode: listOpen = 4; break;
+        case hDownmix: listOpen = 5; break;
+        case hColors: proc.set(bn::pColors, proc.get(bn::pColors) >= 0.5 ? 0 : 1); break;
+        case hDmxCentre: case hDmxSurround: case hDmxLfe: {
+            const int number = id == hDmxCentre ? bn::pDmxCentre : id == hDmxSurround ? bn::pDmxSurround : bn::pDmxLfe;
+            auto* p = proc.param(number);
+            const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+            if (now - lastClickTime < 0.35 && lastClickId == id) {   // double-click: back to the default
+                proc.set(number, id == hDmxLfe ? -40 : -3);
+                lastClickId = 0;
+                break;
+            }
+            lastClickId = id; lastClickTime = now;
+            p->beginChangeGesture();
+            dragId = id; dragY = e.position.y; dragValue = p->convertTo0to1((float)proc.get(number));
             break;
+        }
+        case hLoudReset: an.resetLoudness = true; break;   // a new loudness measurement
+        default: break;
     }
     repaint();
 }
@@ -1098,12 +1423,20 @@ void BinocularEditor::mouseDrag(const juce::MouseEvent& e) {
     dragValue += (dragY - e.position.y) / (160 * usc) * (e.mods.isShiftDown() ? 0.1 : 1.0);
     dragValue = juce::jlimit(0.0, 1.0, dragValue);
     dragY = e.position.y;
+    if (dragId >= hDmxCentre && dragId <= hDmxLfe) {
+        auto* p = proc.param(dragId == hDmxCentre ? bn::pDmxCentre : dragId == hDmxSurround ? bn::pDmxSurround : bn::pDmxLfe);
+        const auto& r = p->getNormalisableRange();
+        const float v = std::round(r.convertFrom0to1((float)dragValue) * 2) / 2;   // half-dB steps
+        p->setValueNotifyingHost(r.convertTo0to1(v));
+        return;
+    }
     knobSet(dragId, dragValue, false);
 }
 
 void BinocularEditor::mouseUp(const juce::MouseEvent& e) {
     mousePos = e.position;
-    if (dragId) proc.param(dragId == hBands ? bn::pBands : dragId == hSelectivity ? bn::pSelectivity : bn::pAveraging)->endChangeGesture();
+    if (dragId) proc.param(dragId == hBands ? bn::pBands : dragId == hSelectivity ? bn::pSelectivity : dragId == hAveraging ? bn::pAveraging
+                           : dragId == hDmxCentre ? bn::pDmxCentre : dragId == hDmxSurround ? bn::pDmxSurround : bn::pDmxLfe)->endChangeGesture();
     dragId = 0;
 }
 

@@ -21,7 +21,7 @@
     <choice id="clap" title="CLAP" description="Binocular as CLAP plug-in, for REAPER, Bitwig Studio and other DAWs that support CLAP. Goes to /Library/Audio/Plug-Ins/CLAP.">
         <pkg-ref id="com.dmajorsound.binocular.clap"/>
     </choice>
-    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.2.0" onConclusion="none">binocular-vst3.pkg</pkg-ref>
-    <pkg-ref id="com.dmajorsound.binocular.au" version="1.2.0" onConclusion="none">binocular-au.pkg</pkg-ref>
-    <pkg-ref id="com.dmajorsound.binocular.clap" version="1.2.0" onConclusion="none">binocular-clap.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.vst3" version="1.3.0" onConclusion="none">binocular-vst3.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.au" version="1.3.0" onConclusion="none">binocular-au.pkg</pkg-ref>
+    <pkg-ref id="com.dmajorsound.binocular.clap" version="1.3.0" onConclusion="none">binocular-clap.pkg</pkg-ref>
 </installer-gui-script>

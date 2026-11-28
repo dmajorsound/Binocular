@@ -11,7 +11,7 @@ struct Theme {
     juce::uint32 bg, panel, panel2, line, grid, hover, text, muted, dim, accent, accentText, accent2, accent2Text,
                  mint, blue, coral, red, warn;
 
-    void set(bool isDark) {
+    void set(bool isDark, bool colorblindSafe = false) {
         dark = isDark;
         if (dark) {
             bg = 0x121418; panel = 0x1C1F24; panel2 = 0x262A30; line = 0x30343B; grid = 0x24282E; hover = 0x30343B;
@@ -23,6 +23,12 @@ struct Theme {
             mint = 0x1F9D63; blue = 0x3880C4; coral = 0xE2784A; red = 0xD64848; warn = 0xD48C28;
         }
         accent = 0x8CC8F2; accentText = 0x0F2638; accent2 = 0x2F5675; accent2Text = 0xFFFFFF;
+        if (colorblindSafe) {
+            // Okabe-Ito colors, safe for red-green color blindness: good = sky blue, quiet = purple, louder = yellow,
+            // too loud / out of phase = orange and vermillion
+            if (dark) { mint = 0x56B4E9; blue = 0xCC79A7; coral = 0xE69F00; red = 0xD55E00; warn = 0xF0E442; }
+            else { mint = 0x0072B2; blue = 0xA0507F; coral = 0xC77F00; red = 0xC04A00; warn = 0x9C8200; }
+        }
     }
 
     static juce::Colour colour(juce::uint32 rgb, float alpha = 1.0f) { return juce::Colour(0xFF000000u | rgb).withAlpha(alpha); }
@@ -49,7 +55,7 @@ struct Theme {
 
 // Mulish for words, Red Hat Mono for numbers (both embedded); sizes are em sizes in layout units
 struct Fonts {
-    juce::Font title { juce::FontOptions() }, body { juce::FontOptions() }, axis { juce::FontOptions() }, valueSmall { juce::FontOptions() }, value { juce::FontOptions() }, tabOn { juce::FontOptions() }, label { juce::FontOptions() }, note { juce::FontOptions() }, small { juce::FontOptions() }, tiny { juce::FontOptions() }, timecode { juce::FontOptions() }, knobValue { juce::FontOptions() }, helpTitle { juce::FontOptions() }, help { juce::FontOptions() }, meter { juce::FontOptions() };
+    juce::Font title { juce::FontOptions() }, body { juce::FontOptions() }, axis { juce::FontOptions() }, valueSmall { juce::FontOptions() }, value { juce::FontOptions() }, tabOn { juce::FontOptions() }, label { juce::FontOptions() }, note { juce::FontOptions() }, small { juce::FontOptions() }, tiny { juce::FontOptions() }, timecode { juce::FontOptions() }, knobValue { juce::FontOptions() }, helpTitle { juce::FontOptions() }, help { juce::FontOptions() }, meter { juce::FontOptions() }, valueBig { juce::FontOptions() }, valueMid { juce::FontOptions() }, valueTiny { juce::FontOptions() };
     void set(float usc);
     static juce::Font make(const char* face, float em);
 };

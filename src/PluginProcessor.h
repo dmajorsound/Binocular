@@ -45,12 +45,14 @@ public:
     juce::AudioParameterFloat* param(int number) const { return params[number]; }
 
     bn::Analyzer analyzer;
+    std::atomic<bool> surround { false };        // the track is 5.1 (the host's channel layout decides)
 
 private:
     template <class Real> void process(juce::AudioBuffer<Real>& buffer);
     bn::Settings settings() const;
 
-    juce::AudioParameterFloat* params[bn::kNumParams + 1] {};
-    std::vector<double> silence;               // zeros for an absent sidechain
+    static constexpr int kMaxParam = 24;
+    juce::AudioParameterFloat* params[kMaxParam] {};
+    std::vector<double> silence;               // zeros for a channel the host does not send
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BinocularProcessor)
 };
