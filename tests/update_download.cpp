@@ -1,6 +1,6 @@
 // Binocular - run by the GitHub build on macOS and Windows: downloads an already published installer the way the
 // update note in the footer does (the same code), and checks that it arrived whole. If it fails, nothing is released.
-//   binocular_update_test <release asset URL> <folder>
+//   BinocularUpdateTest <release asset URL> <folder>
 #include "../src/UpdateCheck.h"
 #include <juce_core/juce_core.h>
 #include <chrono>
@@ -9,7 +9,7 @@
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: binocular_update_test <url> <folder>\n");
+        fprintf(stderr, "usage: BinocularUpdateTest <url> <folder>\n");
         return 2;
     }
     bn::setUpdateFolder(argv[2], false);

@@ -44,7 +44,7 @@ jobs:
       - name: Self-test - the update download
         run: |
           # the update note's own code downloads an already published installer (a fixed version, not this one)
-          T=$(find build -type f -name binocular_update_test -perm -u+x | head -1)
+          T=$(find build -type f -name BinocularUpdateTest -perm -u+x | head -1)
           echo "self-test program: $T"
           "$T" \
             https://github.com/dmajorsound/Binocular/releases/download/v1.0.9/Binocular-1.0.9-mac.dmg "$RUNNER_TEMP"
@@ -175,7 +175,7 @@ jobs:
         shell: pwsh
         run: |
           # the update note's own code downloads an already published installer (a fixed version, not this one)
-          $T = (Get-ChildItem -Path build -Recurse -Filter binocular_update_test.exe | Select-Object -First 1).FullName
+          $T = (Get-ChildItem -Path build -Recurse -Filter BinocularUpdateTest.exe | Select-Object -First 1).FullName
           Write-Host "self-test program: $T"
           & $T `
             https://github.com/dmajorsound/Binocular/releases/download/v1.0.9/Binocular_1.0.9_installer_win64.exe "$env:RUNNER_TEMP"

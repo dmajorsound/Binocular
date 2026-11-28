@@ -73,7 +73,7 @@ endif()
 # self-test of the update download (run by the GitHub build before anything is released)
 option(BN_UPDATE_TEST "Build the update download self-test" OFF)
 if(BN_UPDATE_TEST)
-  juce_add_console_app(BinocularUpdateTest PRODUCT_NAME "binocular_update_test")
+  juce_add_console_app(BinocularUpdateTest)
   target_sources(BinocularUpdateTest PRIVATE tests/update_download.cpp src/UpdateCheck.cpp)
   target_compile_definitions(BinocularUpdateTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
   target_link_libraries(BinocularUpdateTest PRIVATE juce::juce_core juce::juce_data_structures juce::juce_events
